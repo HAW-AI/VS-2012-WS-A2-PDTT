@@ -12,7 +12,8 @@ def compile(path)
 end
 
 def run_tests(name)
-  puts "#{name}_test.erl"
+  name = name.sub('_test', '')
+
   if (File.exists?("#{name}_test.erl"))
     puts "test #{name}"
     puts `erl -noshell -eval "eunit:test(#{name}_test, [verbose])" -s init stop`
