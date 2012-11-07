@@ -1,11 +1,33 @@
 -module(gcd).
 -compile([export_all]).
 
+% die Verzögerungszeit
+% die Terminierungszeit
+% der Startnummer dieses Prozesses (also der wievielte gestartete ggT-Prozess er ist)
+% seine eindeutige Starternummer
+% die Praktikumsgruppennummer
+% die Teamnummer 
+% die benötigten Kontaktdaten für den Namensdienst
+%                             und den Koordinator
 % Der ggT-Prozess meldet sich beim Koordinator mit seinem Namen an (hello) und beim Namensdienst (rebind). Er registriert sich ebenfalls lokal auf der Erlang-Node mit seinem Namen (register). Der ggT-Prozess erwartet dann vom Koordinator die Informationen über seine Nachbarn (setneighbors).
 start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, TeamNumber, NameService, Coordinator) ->
-  ClientName = client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber),
-  register(ClientName, self()).
-  % Coordinator ! {hello, }
+  ClientName = list_to_atom(client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber)),
+
+  register(ClientName, self()),
+  Coordinator ! {hello, ClientName},
+  NameService ! {self(), {rebind, ClientName, node()}},
+  receive
+    ok ->
+      receive
+        {setneighbors, LeftNeighbor, RightNeighbor} ->
+          loop(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, TeamNumber, NameService, Coordinator, LeftNeighbor, RightNeighbor)
+      end
+  end.
+
+
+loop(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, TeamNumber, NameService, Coordinator, LeftNeighbor, RightNeighbor) ->
+  ok.
+
 
 % {setneighbors,LeftN,RightN}: die (lokal auf deren Node registrieten und im Namensdienst registrierten) Namen des linken und rechten Nachbarn werden gesetzt.
 % {setpm,MiNeu}: die von diesem Prozess zu berabeitenden Zahl für eine neue Berechnung wird gesetzt.
