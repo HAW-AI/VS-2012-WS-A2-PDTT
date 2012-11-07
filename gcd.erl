@@ -11,7 +11,7 @@
 %                             und den Koordinator
 % Der ggT-Prozess meldet sich beim Koordinator mit seinem Namen an (hello) und beim Namensdienst (rebind). Er registriert sich ebenfalls lokal auf der Erlang-Node mit seinem Namen (register). Der ggT-Prozess erwartet dann vom Koordinator die Informationen über seine Nachbarn (setneighbors).
 start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, TeamNumber, NameService, Coordinator) ->
-  ClientName = list_to_atom(client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber)),
+  ClientName = client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber),
 
   register(ClientName, self()),
   Coordinator ! {hello, ClientName},
@@ -40,4 +40,4 @@ loop(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, Team
 %    <PraktikumsgruppenID><TeamID><Nummer des ggT-Prozess><Nummer des Starters>, 
 % also z.B. ist in der Praktikumsgruppe 4 von dem Team 03 ein zweiter ggT-Prozess von ihrem ersten Starter gestartet worden, so erhält dieser ggT-Prozess den Namen 4321. In der Kommunikation wird nur dieser Name verwendet!  
 client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber) ->
-  lists:flatten(io_lib:format("~B~B~B~B", [GroupNumber, TeamNumber, ProcessNumber, StarterNumber])).
+  list_to_atom(lists:flatten(io_lib:format("~B~B~B~B", [GroupNumber, TeamNumber, ProcessNumber, StarterNumber]))).
