@@ -1,6 +1,5 @@
 -module(gcd).
 -compile([export_all]).
--include_lib("eunit/include/eunit.hrl").
 
 % die Verzögerungszeit
 % die Terminierungszeit
