@@ -12,24 +12,29 @@
 % Der ggT-Prozess meldet sich beim Koordinator mit seinem Namen an (hello) und beim Namensdienst (rebind). Er registriert sich ebenfalls lokal auf der Erlang-Node mit seinem Namen (register). Der ggT-Prozess erwartet dann vom Koordinator die Informationen über seine Nachbarn (setneighbors).
 start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, TeamNumber, NameServiceNode, Coordinator) ->
   ClientName = client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber),
+  Log = fun (Msg) -> log(Msg, ClientName) end,
 
   register(list_to_atom(ClientName), self()),
 
   case name_service(NameServiceNode) of
     {ok, NameService} ->
       NameService ! {self(), {rebind, ClientName, node()}},
+      Log(format("Registered with name service on node ~p.", [NameServiceNode])),
 
       receive
         ok ->
           Coordinator ! {hello, ClientName},
+          Log("Contacted coordinator."),
 
           receive
             {setneighbors, LeftNeighbor, RightNeighbor} ->
+              Log(format("Set neighbors to ~p (left) and ~p (right).", [LeftNeighbor, RightNeighbor])),
               loop(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, TeamNumber, NameService, Coordinator, LeftNeighbor, RightNeighbor)
           end
       end;
 
     error -> 
+      Log(format("Could not find name service on node ~p.", [NameServiceNode])),
       error
   end.
 
@@ -59,6 +64,10 @@ name_service(NameServiceNode) ->
     _ ->
       error
   end.
+
+log(Msg, ClientName) ->
+  {ok, HostName} = inet:gethostname(),
+  werkzeug:logging(format("GGTP_~s@~s.log", [ClientName, HostName]), format("~s~n", [Msg])).
 
 format(String, Arguments) ->
   lists:flatten(io_lib:format(String, Arguments)).
