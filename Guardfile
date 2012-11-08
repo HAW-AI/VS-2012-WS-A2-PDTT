@@ -16,6 +16,6 @@ def run_tests(name)
 
   if (File.exists?("#{name}_test.erl"))
     puts "test #{name}"
-    puts `erl -noshell -eval "eunit:test(#{name}_test, [verbose])" -s init stop`
+    puts `erl -noshell -name test -setcookie vs -eval "eunit:test(#{name}_test, [verbose])" -s init stop`
   end
 end
