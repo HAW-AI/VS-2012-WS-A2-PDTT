@@ -2,7 +2,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 client_name_test_() ->
-  [ ?_assertEqual('1234', gcd:client_name(1, 2, 3, 4))
+  [ ?_assertEqual("1234", gcd:client_name(1, 2, 3, 4))
   ].
 
 name_service_test_() ->

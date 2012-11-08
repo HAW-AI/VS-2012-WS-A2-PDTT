@@ -13,7 +13,7 @@
 start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, TeamNumber, NameServiceNode, Coordinator) ->
   ClientName = client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber),
 
-  register(ClientName, self()),
+  register(list_to_atom(ClientName), self()),
 
   case name_service(NameServiceNode) of
     {ok, NameService} ->
@@ -22,7 +22,7 @@ start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, Tea
       receive
         ok ->
           Coordinator ! {hello, ClientName},
-          
+
           receive
             {setneighbors, LeftNeighbor, RightNeighbor} ->
               loop(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, TeamNumber, NameService, Coordinator, LeftNeighbor, RightNeighbor)
@@ -48,7 +48,7 @@ loop(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, Team
 %    <PraktikumsgruppenID><TeamID><Nummer des ggT-Prozess><Nummer des Starters>, 
 % also z.B. ist in der Praktikumsgruppe 4 von dem Team 03 ein zweiter ggT-Prozess von ihrem ersten Starter gestartet worden, so erhält dieser ggT-Prozess den Namen 4321. In der Kommunikation wird nur dieser Name verwendet!  
 client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber) ->
-  list_to_atom(lists:flatten(io_lib:format("~B~B~B~B", [GroupNumber, TeamNumber, ProcessNumber, StarterNumber]))).
+  format("~B~B~B~B", [GroupNumber, TeamNumber, ProcessNumber, StarterNumber]).
 
 name_service(NameServiceNode) ->
   case net_adm:ping(NameServiceNode) of
@@ -59,3 +59,6 @@ name_service(NameServiceNode) ->
     _ ->
       error
   end.
+
+format(String, Arguments) ->
+  lists:flatten(io_lib:format(String, Arguments)).
