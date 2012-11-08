@@ -14,6 +14,8 @@ start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, Tea
   ClientName = client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber),
   Log = fun (Msg) -> log(Msg, ClientName) end,
 
+  Log(format("~s Start GCD client ~s with PID ~p on node ~p.", [werkzeug:timeMilliSecond(), ClientName, self(), node()])),
+
   register(list_to_atom(ClientName), self()),
 
   case name_service(NameServiceNode) of
