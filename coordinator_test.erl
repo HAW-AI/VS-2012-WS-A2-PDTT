@@ -1,6 +1,10 @@
 -module(coordinator_test).
 -include_lib("eunit/include/eunit.hrl").
 
+-record(state, { clients=orddict:new()
+               , config
+               }).
+
 -record(gcd_client, { name
                     , left_neighbor
                     , right_neighbor
@@ -39,4 +43,14 @@ build_ring_of_gcd_clients_test_() ->
 
 
   [ ?_assertEqual(ExpectedClientsWithRing, ClientsWithRing)
+  ].
+
+register_gcd_client_test_() ->
+  ClientRegistering = 1234,
+  ExpectedClient = #gcd_client{name=ClientRegistering},
+
+  StateWithRegisteredClient = coordinator:register_gcd_client(#state{}, ClientRegistering),
+
+  [ ?_assertEqual(#state{clients=orddict:from_list([{ClientRegistering, ExpectedClient}])},
+                  StateWithRegisteredClient)
   ].
