@@ -42,17 +42,25 @@ start() ->
   end.
 
 
-stop(State) ->
-  %%% get Nameservice PID
-  NameService = global:whereis_name(nameservice),
+stop() ->
+  {ok, Config} = read_config_from_file(),
 
-  %%% unbind name with Nameservice
-  NameService ! {self(), {unbind, get_coordinator_name(State)}},
+  %%% ping NameServiceNode
+  case ping_name_service(proplists:get_value(nameservicenode, Config)) of
+    {ok, NameService} ->
+      %%% unbind name with Nameservice
+      NameService ! {self(), {unbind, proplists:get_value(koordinatorname, Config)}},
 
-  receive 
-    ok -> io:format("..unbind..done.\n")
+      receive
+        ok ->
+          io:format("..unbind..done.\n"),
+          exit(self())
+      end;
+
+    error ->
+      %%% TODO log the error
+      error
   end,
-
   ok.
 
 
@@ -75,7 +83,13 @@ initial(State) ->
     %%% once somebody triggers the calculation of the distributed gcd
     %%% the coordinator starts building "The Ring"
     start_distributed_gcd_calculation ->
-      build_ring(State)
+      build_ring(State);
+
+    _Unknown ->
+      %%% TODO handle unknown message. need to catch these otherwise they will
+      %%% still be in the process' mailbox when we switch states and then
+      %%% they might match which will result in unexpected behaviour
+      initial(State)
 
   end,
 
@@ -99,26 +113,21 @@ ready(State) ->
 %%% registered with the name service, given that coordinator is in the
 %%% initial state.
 start_distributed_gcd_calculation() ->
-  {ok, Config} = file:consult("server.cfg"),
+  {ok, Config} = read_config_from_file(),
   CoordinatorName = proplists:get_value(koordinatorname, Config),
   NameServiceNode = proplists:get_value(nameservicenode, Config),
 
 
   %%% ping NameServiceNode
   case ping_name_service(NameServiceNode) of
-    {ok, NameService} ->
+    {ok, _NameService} ->
       %%% lookup the name and node of the current coordinator in charge
-      NameService ! {self(), {lookup, CoordinatorName}},
-
-      receive
+      case nameservice_lookup(CoordinatorName) of
         not_found -> io:format("..meindienst..not_found.\n");
 
-        {Name, Node} ->
-          io:format("...ok: {~p,~p}.\n",[Name,Node]),
-
-          %%% the message should only be received by a coordiator in the
-          %%% initial state
-          {Name, Node} ! start_distributed_gcd_calculation
+        %%% the message should only be received by a coordiator in the
+        %%% initial state
+        ServicePid -> ServicePid ! start_distributed_gcd_calculation
       end;
 
     _ ->
@@ -131,10 +140,13 @@ terminating() ->
 
 %%% read config from file into state and return new state
 read_config_into_state(State) ->
-  {ok, Config} = file:consult("server.cfg"),
+  {ok, Config} = read_config_from_file(),
   State#state{config = Config}.
 
 %%% useful getter functions
+
+read_config_from_file() ->
+  file:consult("coordinator.cfg").
 
 %%% get config from state record
 get_config(State) ->
@@ -201,10 +213,10 @@ build_ring_of_gcd_clients(Clients) ->
     true -> error;
     false ->
       ClientsList = orddict:fetch_keys(Clients),
-      Pivot = lists:head(Clients),
+      [Pivot | Tail] = ClientsList,
       build_ring_of_gcd_clients(Clients,
-                                Pivot,
-                                lists:tail(ClientsList),
+                                orddict:fetch(Pivot, Clients),
+                                Tail,
                                 none)
   end.
 
@@ -212,14 +224,15 @@ build_ring_of_gcd_clients(Clients, Pivot, RemainingClientsList, none) ->
   %%% initial call:
   build_ring_of_gcd_clients(Clients,
                             Pivot,
-                            lists:tail(RemainingClientsList),
+                            RemainingClientsList,
                             Pivot);
 
 build_ring_of_gcd_clients(Clients, Pivot, [], PreviousClient) ->
   %%% empty RemainingClientsList:
   %%% all clients have been updated. all that is missing is the left neighbor
   %%% of the Pivot element and the right_neighbor of the PreviousClient
-  FinishedPivot = Pivot#gcd_client{left_neighbor=PreviousClient#gcd_client.name},
+  {ok, PivotFromClientsDictionary} = orddict:find(Pivot#gcd_client.name, Clients),
+  FinishedPivot = PivotFromClientsDictionary#gcd_client{left_neighbor=PreviousClient#gcd_client.name},
 
   %%% 3. set FinishedPivot as the right_neighbor of the PreviousClient
   FinishedPreviousClient = PreviousClient#gcd_client{right_neighbor=FinishedPivot#gcd_client.name},
@@ -237,8 +250,9 @@ build_ring_of_gcd_clients(Clients, Pivot, RemainingClientsList, PreviousClient) 
   %%% 1. get the CurrentClient from the Clients Dictionary
   %%% we dont match for error because if this fails we have a problem anyway
   %%% and want the process to throw an exception for now
-  {ok, CurrentClient} = orddict:find(lists:head(RemainingClientsList), Clients),
- 
+  [Head | Tail] = RemainingClientsList,
+  {ok, CurrentClient} = orddict:find(Head, Clients),
+
   %%% 1. set the PreviousClient as the left_neighbor of the current client
   %%% 2. set the head of the RemainingClientsList as the right_neighbor
   %%% of the current client
@@ -258,7 +272,7 @@ build_ring_of_gcd_clients(Clients, Pivot, RemainingClientsList, PreviousClient) 
   %%% 3. set the RemainingClientsList to the tail of RemainingClientsList
   build_ring_of_gcd_clients(UpdatedClients2,
                             Pivot,
-                            lists:tail(RemainingClientsList),
+                            Tail,
                             UpdatedClient).
 
 nameservice_lookup(ServiceName) ->
