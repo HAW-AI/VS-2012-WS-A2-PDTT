@@ -14,9 +14,6 @@ start() ->
   %%% read config from file into State
   State = read_config_into_state(#state{}),
 
-  %%% register coordinator name locally
-  register(get_coordinator_name(State), self()),
-
   %%% ping NameServiceNode
   case ping_name_service(get_nameservice_node_name(State)) of
     {ok, NameService} ->
@@ -26,9 +23,11 @@ start() ->
       receive
         ok ->
           io:format("..bind.done.\n"),
+          %%% register coordinator name locally
+          register(get_coordinator_name(State), self()),
 
           %%% done with the start phase. everything worked. go into initial state.
-          initial(State);
+          spawn(fun() -> initial(State) end);
 
         in_use ->
           %%% something went wrong. the coordinator is already bound at the Nameservice.
@@ -106,7 +105,9 @@ build_ring(State) ->
   ready(StateWithRing).
 
 ready(State) ->
-  inform_gcd_clients_,
+  {GCD, _} = calculate_gcd_seed(),
+  set_calculation_seed_in_gcd_clients(State, GCD),
+  start_calculation_for_a_few_gcd_clients(State, GCD),
   ok.
 
 %%% call this module function and it will start the coordiator that is
@@ -286,6 +287,8 @@ nameservice_lookup(ServiceName) ->
     ServicePID -> ServicePID
   end.
 
+%%% this function iterates over all clients registered with the coordinator
+%%% and sends them the message to set their neighbors
 introduce_clients_to_their_neighbors(State) ->
   orddict:map(
     fun(Key, Value) ->
@@ -302,7 +305,94 @@ introduce_clients_to_their_neighbors(State) ->
     end,
     get_clients(State)).
 
+%%% sets a product of the gcd value in all the gcd_clients.
+set_calculation_seed_in_gcd_clients(State, GCD) ->
+  ClientsNamesList = orddict:fetch_keys(get_clients(State)),
 
+  lists:map(
+    fun(Elem) ->
+      case nameservice_lookup(Elem) of
+        %%% TODO throw some exception if not_found
+        not_found -> error;
 
+        ServicePID ->
+          %%% send a unique calculation seed for the gcd calculation
+          %%% to each gcd_client
+          {GCD, ProductOfGCD} = calculate_gcd_seed(GCD),
+          ServicePID ! {setpm, ProductOfGCD},
+          ok
+      end
+    end,
+    ClientsNamesList),
+  ok.
 
+%%% sets the calculation seed value in 15% of the gcd_clients. these 15%
+%%% are randomly chosen from all clients registered with the coordinator.
+start_calculation_for_a_few_gcd_clients(State, GCD) ->
+  ClientsNamesList = orddict:fetch_keys(get_clients(State)),
+  %%% select 15% of the clients but at least 2 clients
+  SelectedClientNames = select_percentage_of_elements_from_list(ClientsNamesList, 15),
 
+  lists:map(
+    fun(Elem) ->
+      case nameservice_lookup(Elem) of
+        %%% TODO throw some exception if not_found
+        not_found -> error;
+
+        ServicePID ->
+          %%% send the seed for the gcd calculation to each selected gcd_client
+          {GCD, ProductOfGCD} = calculate_gcd_seed(GCD),
+          ServicePID ! {sendy, ProductOfGCD},
+          ok
+      end
+    end,
+    SelectedClientNames),
+  ok.
+
+select_percentage_of_elements_from_list(List, Percentage) ->
+  RemainingElementsToSelect = case round((length(List)/100) * Percentage) < 2 of
+    true -> 2;
+
+    _ -> round((length(List)/100) * Percentage)
+  end,
+
+  select_percentage_of_elements_from_list(List, RemainingElementsToSelect, []).
+
+select_percentage_of_elements_from_list(_List, 0, Accu) ->
+  Accu;
+
+select_percentage_of_elements_from_list(List, RemainingElementsToSelect, Accu) ->
+  [Head | Tail] = shuffle(List),
+  select_percentage_of_elements_from_list(Tail,
+                                          RemainingElementsToSelect - 1,
+                                          [Head | Accu]).
+
+%%% randomly shuffle a List with the Fisher-Yates Shuffle
+%%% taken from: http://en.literateprograms.org/Fisher-Yates_shuffle_(Erlang)
+shuffle(List) -> shuffle(List, []).
+shuffle([], Acc) -> Acc;
+shuffle(List, Acc) ->
+    {Leading, [H | T]} = lists:split(random:uniform(length(List)) - 1, List),
+    shuffle(Leading ++ T, [H | Acc]).
+
+%%% returns {RequestedGCD, Product} where Product is the product of RequestedGCD
+%%% and the set of primes {3, 5, 11, 13, 23, 37} randomly raised to the power
+%%% of {0, 1, 2}.
+%%% Example Return Value: {65, 65 * 3^2 * 5^1 * 11^0 * 13^2 * 23^1 * 37^1}
+
+calculate_gcd_seed() ->
+  %%% randomly pick a GCD between 1..100
+  RequestedGCD = random:uniform(100),
+  calculate_gcd_seed(RequestedGCD).
+
+calculate_gcd_seed(RequestedGCD) ->
+  {RequestedGCD,
+   RequestedGCD * round(
+      math:pow(3, random:uniform(3) - 1) *
+      math:pow(5, random:uniform(3) - 1) *
+      math:pow(11, random:uniform(3) - 1) *
+      math:pow(13, random:uniform(3) - 1) *
+      math:pow(23, random:uniform(3) - 1) *
+      math:pow(37, random:uniform(3) - 1)
+      )
+  }.
