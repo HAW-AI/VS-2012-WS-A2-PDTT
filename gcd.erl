@@ -1,5 +1,15 @@
 -module(gcd).
 -compile([export_all]).
+% DelayTime, TerminationTime, ClientName, NameService, Coordinator, LeftNeighbor, RightNeighbor, Number
+-record (state, { delay_time
+                , termination_time
+                , client_name
+                , name_service
+                , coordinator
+                , left_neighbor
+                , right_neighbor
+                , number
+                }).
 
 % die Verzögerungszeit
 % die Terminierungszeit
@@ -12,7 +22,7 @@
 % Der ggT-Prozess meldet sich beim Koordinator mit seinem Namen an (hello) und beim Namensdienst (rebind). Er registriert sich ebenfalls lokal auf der Erlang-Node mit seinem Namen (register). Der ggT-Prozess erwartet dann vom Koordinator die Informationen über seine Nachbarn (setneighbors).
 start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, TeamNumber, NameServiceNode, Coordinator) ->
   ClientName = client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber),
-  Log = fun (Msg) -> log(Msg, ClientName) end,
+  Log = fun (Msg) -> log(ClientName, Msg) end,
 
   Log(format("~s Start GCD client ~s with PID ~p on node ~p.", [werkzeug:timeMilliSecond(), ClientName, self(), node()])),
 
@@ -27,12 +37,11 @@ start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, Tea
         ok ->
           Coordinator ! {hello, ClientName},
           Log("Contacted coordinator."),
+          wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordinator);
 
-          receive
-            {setneighbors, LeftNeighbor, RightNeighbor} ->
-              Log(format("Set neighbors to ~p (left) and ~p (right).", [LeftNeighbor, RightNeighbor])),
-              loop(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, TeamNumber, NameService, Coordinator, LeftNeighbor, RightNeighbor)
-          end
+        Unknown ->
+          Log(format("start: Unknown message ~p.", [Unknown])),
+          error
       end;
 
     error -> 
@@ -40,8 +49,82 @@ start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, Tea
       error
   end.
 
-loop(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, TeamNumber, NameService, Coordinator, LeftNeighbor, RightNeighbor) ->
-  ok.
+wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordinator) ->
+  receive
+    {setneighbors, LeftNeighbor, RightNeighbor} ->
+      log(ClientName, format("Set neighbors to ~p (left) and ~p (right).", [LeftNeighbor, RightNeighbor])),
+      wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator, LeftNeighbor, RightNeighbor);
+
+    kill ->
+      ok;
+
+    Unknown ->
+      log(ClientName, format("wait_for_neighbors: Unknown message ~p.", [Unknown])),
+      wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordinator)
+  end.
+
+wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator, LeftNeighbor, RightNeighbor) ->
+  receive
+    {setpm, Number} ->
+      with_number(#state{ delay_time = DelayTime
+                        , termination_time = TerminationTime
+                        , client_name = ClientName
+                        , name_service = NameService
+                        , coordinator = Coordinator
+                        , left_neighbor = LeftNeighbor
+                        , right_neighbor = RightNeighbor
+                        , number = Number
+                        });
+
+    kill ->
+      ok;
+
+    Unknown ->
+      log(ClientName, format("wait_for_number: Unknown message ~p.", [Unknown])),
+      wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator, LeftNeighbor, RightNeighbor)
+  end.
+
+with_number(State = #state{client_name = ClientName}) ->
+  receive
+    {sendy, Y} ->
+      with_number(send_y(State, Y));
+
+    {abstimmung, Initiator} ->
+      % TODO
+      with_number(State);
+
+    {tellmi, From} ->
+      with_number(tell_mi(State, From));
+
+    kill ->
+      ok;
+
+    Unknown ->
+      log(ClientName, format("with_number: Unknown message ~p.", [Unknown])),
+      with_number(State)
+  end.
+
+
+send_y(State = #state{number = Number, client_name = ClientName, coordinator = Coordinator}, Y) ->
+  NewNumberSafe = case gcd(Number, Y) of
+    NewNumber when NewNumber =/= Number ->
+      Coordinator ! {briefmi, {ClientName, NewNumber, werkzeug:timeMilliSecond()}},
+      NewNumber;
+
+    _ ->
+      Number
+  end,
+
+  State#state{number = NewNumberSafe}.
+
+tell_mi(State = #state{number = Number}, From) ->
+  From ! Number,
+  State.
+
+
+gcd(Number, Y) ->
+  % TODO
+  Number.
 
 
 % {setneighbors,LeftN,RightN}: die (lokal auf deren Node registrieten und im Namensdienst registrierten) Namen des linken und rechten Nachbarn werden gesetzt.
@@ -67,7 +150,7 @@ name_service(NameServiceNode) ->
       error
   end.
 
-log(Msg, ClientName) ->
+log(ClientName, Msg) ->
   {ok, HostName} = inet:gethostname(),
   werkzeug:logging(format("GGTP_~s@~s.log", [ClientName, HostName]), format("~s~n", [Msg])).
 
