@@ -49,6 +49,7 @@ start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, Tea
       error
   end.
 
+% {setneighbors,LeftN,RightN}: die (lokal auf deren Node registrieten und im Namensdienst registrierten) Namen des linken und rechten Nachbarn werden gesetzt.
 wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordinator) ->
   receive
     {setneighbors, LeftNeighbor, RightNeighbor} ->
@@ -63,6 +64,7 @@ wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordina
       wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordinator)
   end.
 
+% {setpm,MiNeu}: die von diesem Prozess zu berabeitenden Zahl für eine neue Berechnung wird gesetzt.
 wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator, LeftNeighbor, RightNeighbor) ->
   receive
     {setpm, Number} ->
@@ -89,6 +91,7 @@ with_number(State = #state{client_name = ClientName}) ->
     {sendy, Y} ->
       with_number(send_y(State, Y));
 
+    % {abstimmung,Initiator}: Wahlnachricht für die Terminierung der aktuellen Berechnung; Initiator ist der Initiator dieser Wahl (z.B. Name des ggT-Prozesses).
     {abstimmung, Initiator} ->
       % TODO
       with_number(State);
@@ -96,6 +99,7 @@ with_number(State = #state{client_name = ClientName}) ->
     {tellmi, From} ->
       with_number(tell_mi(State, From));
 
+    % kill: der ggT-Prozess wird beendet.
     kill ->
       ok;
 
@@ -105,6 +109,7 @@ with_number(State = #state{client_name = ClientName}) ->
   end.
 
 
+% {sendy,Y}: der rekursive Aufruf der ggT Berechnung.
 send_y(State = #state{number = Number, client_name = ClientName, coordinator = Coordinator}, Y) ->
   NewNumberSafe = case gcd(Number, Y) of
     NewNumber when NewNumber =/= Number ->
@@ -117,6 +122,7 @@ send_y(State = #state{number = Number, client_name = ClientName, coordinator = C
 
   State#state{number = NewNumberSafe}.
 
+% {tellmi,From}: Sendet das aktuelle Mi an From. Kann z.B. vom Koordinator genutzt werden, um bei einem Berechnungsstillstand die Mi-Situation im Ring anzuzeigen.
 tell_mi(State = #state{number = Number}, From) ->
   From ! Number,
   State.
@@ -127,12 +133,6 @@ gcd(Number, Y) ->
   Number.
 
 
-% {setneighbors,LeftN,RightN}: die (lokal auf deren Node registrieten und im Namensdienst registrierten) Namen des linken und rechten Nachbarn werden gesetzt.
-% {setpm,MiNeu}: die von diesem Prozess zu berabeitenden Zahl für eine neue Berechnung wird gesetzt.
-% {sendy,Y}: der rekursive Aufruf der ggT Berechnung.
-% {abstimmung,Initiator}: Wahlnachricht für die Terminierung der aktuellen Berechnung; Initiator ist der Initiator dieser Wahl (z.B. Name des ggT-Prozesses).
-% {tellmi,From}: Sendet das aktuelle Mi an From. Kann z.B. vom Koordinator genutzt werden, um bei einem Berechnungsstillstand die Mi-Situation im Ring anzuzeigen.
-% kill: der ggT-Prozess wird beendet.
 
 % Ein ggT-Prozess hat den Namen ?????, wobei ????? eine Zahl ist, die sich wie folgt zusammensetzt: 
 %    <PraktikumsgruppenID><TeamID><Nummer des ggT-Prozess><Nummer des Starters>, 
