@@ -35,12 +35,20 @@ start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, Tea
 
       receive
         ok ->
-          Coordinator = coordinator(NameService, CoordinatorName),
-          Log("Resolved coordinator to ~p.", [Coordinator]),
+          Log(format("Resolve coordinator from name ~s.", [CoordinatorName])),
 
-          Coordinator ! {hello, ClientName},
-          Log("Contacted coordinator."),
-          wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordinator);
+          case coordinator(NameService, CoordinatorName) of
+            {ok, Coordinator} ->
+              Log(format("Resolved coordinator to ~p.", [Coordinator])),
+
+              Coordinator ! {hello, ClientName},
+              Log("Contacted coordinator."),
+              wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordinator);
+
+            _ ->
+              Log("Could not resolve coordinator"),
+              error
+          end;
 
         Unknown ->
           Log(format("start: Unknown message ~p.", [Unknown])),
