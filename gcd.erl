@@ -57,6 +57,7 @@ wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordina
       wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator, LeftNeighbor, RightNeighbor);
 
     kill ->
+      log(ClientName, "wait_for_neighbors: kill."),
       ok;
 
     Unknown ->
@@ -68,6 +69,7 @@ wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordina
 wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator, LeftNeighbor, RightNeighbor) ->
   receive
     {setpm, Number} ->
+      log(ClientName, format("wait_for_number: Set Number to ~B.", [Number])),
       with_number(#state{ delay_time = DelayTime
                         , termination_time = TerminationTime
                         , client_name = ClientName
@@ -79,6 +81,7 @@ wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator
                         });
 
     kill ->
+      log(ClientName, "wait_for_number: kill."),
       ok;
 
     Unknown ->
@@ -89,18 +92,22 @@ wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator
 with_number(State = #state{client_name = ClientName}) ->
   receive
     {sendy, Y} ->
+      log(ClientName, format("New Y: ~B.", [Y])),
       with_number(send_y(State, Y));
 
     % {abstimmung,Initiator}: Wahlnachricht für die Terminierung der aktuellen Berechnung; Initiator ist der Initiator dieser Wahl (z.B. Name des ggT-Prozesses).
     {abstimmung, Initiator} ->
+      log(ClientName, format("Vote from ~p.", [Initiator])),
       % TODO
       with_number(State);
 
     {tellmi, From} ->
+      log(ClientName, format("Tell ~p the number.", [From])),
       with_number(tell_mi(State, From));
 
     % kill: der ggT-Prozess wird beendet.
     kill ->
+      log(ClientName, "with_number: kill."),
       ok;
 
     Unknown ->
