@@ -110,10 +110,11 @@ with_number(State = #state{client_name = ClientName}) ->
 
 
 % {sendy,Y}: der rekursive Aufruf der ggT Berechnung.
-send_y(State = #state{number = Number, client_name = ClientName, coordinator = Coordinator}, Y) ->
+send_y(State = #state{number = Number, client_name = ClientName, coordinator = Coordinator, left_neighbor = LeftNeighbor, right_neighbor = RightNeighbor}, Y) ->
   NewNumberSafe = case gcd(Number, Y) of
     NewNumber when NewNumber =/= Number ->
       Coordinator ! {briefmi, {ClientName, NewNumber, werkzeug:timeMilliSecond()}},
+      send_number_to_neighbors(NewNumber, LeftNeighbor, RightNeighbor),
       NewNumber;
 
     _ ->
@@ -122,6 +123,9 @@ send_y(State = #state{number = Number, client_name = ClientName, coordinator = C
 
   State#state{number = NewNumberSafe}.
 
+send_number_to_neighbors(Number, LeftNeighbor, RightNeighbor) ->
+  lists:foreach(fun(Neighbor) -> Neighbor ! {send_y, Number} end, [LeftNeighbor, RightNeighbor]).
+
 % {tellmi,From}: Sendet das aktuelle Mi an From. Kann z.B. vom Koordinator genutzt werden, um bei einem Berechnungsstillstand die Mi-Situation im Ring anzuzeigen.
 tell_mi(State = #state{number = Number}, From) ->
   From ! Number,
@@ -129,8 +133,10 @@ tell_mi(State = #state{number = Number}, From) ->
 
 
 gcd(Number, Y) ->
-  % TODO
-  Number.
+  case Y < Number of
+    true -> ((Number-1) rem Y) + 1;
+    _    -> Number
+  end.
 
 
 
