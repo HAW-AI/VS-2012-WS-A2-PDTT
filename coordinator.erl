@@ -62,8 +62,15 @@ initial(State) ->
 
     % Ein ggT-Prozess meldet sich beim Koordinator mit Namen Clientname an (Name ist der lokal registrierte Name!).
     {hello, ClientName} ->
-      log(lists:concat(["Client hat sich registriert unter namen: ", ClientName])),
-      initial(register_gcd_client(State, ClientName));
+      log(format("Client hat sich registriert unter namen: ~p", [ClientName])),
+      ClientNameToBeSaved = case werkzeug:type_is(ClientName) of
+        list -> list_to_atom(ClientName);
+        atom -> ClientName;
+        _ ->
+          log_error(format("Received Clientname that is neither string nor atom: ~p", [ClientName])),
+          initial(State)
+      end,
+      initial(register_gcd_client(State, ClientNameToBeSaved));
 
     %%% once somebody triggers the calculation of the distributed gcd
     %%% the coordinator starts building "The Ring"
@@ -425,13 +432,13 @@ format(String, ArgumentsList) ->
 %%% Helpers for message sending
 %%%
 nameservice_lookup(NameService, ServiceName) ->
-  log(lists:concat(["Suche beim Namensdienst nach Dienst: ", ServiceName])),
+  log(format("Suche beim Namensdienst nach Dienst: ~p", [ServiceName])),
 
   NameService ! {self(), {lookup, ServiceName}},
 
   receive
     not_found ->
-      log_error(lists:concat(["Fehlgeschlagene Suche beim Namensdienst nach Dienst: ", ServiceName])),
+      log_error(format("Fehlgeschlagene Suche beim Namensdienst nach Dienst: ~p", [ServiceName])),
       not_found;
     ServiceAddress = {ServiceName, ServiceNode} when
       is_atom(ServiceName) and is_atom(ServiceNode) ->
@@ -466,7 +473,9 @@ send_message_to_service(State, ServiceName, Message) ->
     {ok, NameService} ->
       %%% lookup the name and node of the current coordinator in charge
       case nameservice_lookup(NameService, ServiceName) of
-        not_found -> not_found;
+        not_found ->
+          log_error(format("Service: ~p not found at nameservice", [ServiceName])),
+          not_found;
 
         %%% everything is good. send message.
         {ok, ServicePid} -> ServicePid ! Message
