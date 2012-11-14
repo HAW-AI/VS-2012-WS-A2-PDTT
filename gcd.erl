@@ -9,6 +9,9 @@
                 , left_neighbor
                 , right_neighbor
                 , number
+                , vote_timer
+                , has_started_vote
+                , number_retrieval_time
                 }).
 
 % die Verzögerungszeit
@@ -21,10 +24,12 @@
 %                             und den Koordinator
 % Der ggT-Prozess meldet sich beim Koordinator mit seinem Namen an (hello) und beim Namensdienst (rebind). Er registriert sich ebenfalls lokal auf der Erlang-Node mit seinem Namen (register). Der ggT-Prozess erwartet dann vom Koordinator die Informationen über seine Nachbarn (setneighbors).
 
-start(DelayTime, TerminationTime, ProcessNumber, GroupNumber, TeamNumber, NameServiceNode, CoordinatorName, StarterNumber) ->
-  spawn(fun()-> init(DelayTime, TerminationTime, ProcessNumber, GroupNumber, TeamNumber, NameServiceNode, CoordinatorName, StarterNumber) end).
+start(DelayTimeInS, TerminationTimeInS, ProcessNumber, GroupNumber, TeamNumber, NameServiceNode, CoordinatorName, StarterNumber) ->
+  spawn(fun()-> init(DelayTimeInS, TerminationTimeInS, ProcessNumber, GroupNumber, TeamNumber, NameServiceNode, CoordinatorName, StarterNumber) end).
 
-init(DelayTime, TerminationTime, ProcessNumber, GroupNumber, TeamNumber, NameServiceNode, CoordinatorName, StarterNumber) ->
+init(DelayTimeInS, TerminationTimeInS, ProcessNumber, GroupNumber, TeamNumber, NameServiceNode, CoordinatorName, StarterNumber) ->
+  DelayTime = DelayTimeInS * 1000,
+  TerminationTime = TerminationTimeInS * 1000,
   ClientName = client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber),
   Log = fun (Msg) -> log(ClientName, Msg) end,
 
@@ -89,6 +94,7 @@ wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator
   receive
     {setpm, Number} ->
       log(ClientName, format("wait_for_number: Set Number to ~B.", [Number])),
+      VoteTimer = start_vote_timer(TerminationTime, ClientName),
       with_number(#state{ delay_time = DelayTime
                         , termination_time = TerminationTime
                         , client_name = ClientName
@@ -97,6 +103,9 @@ wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator
                         , left_neighbor = LeftNeighbor
                         , right_neighbor = RightNeighbor
                         , number = Number
+                        , vote_timer = VoteTimer
+                        , has_started_vote = false
+                        , number_retrieval_time = current_time_milliseconds()
                         });
 
     kill ->
@@ -118,9 +127,8 @@ with_number(State = #state{client_name = ClientName, number = Number}) ->
 
     % {abstimmung,Initiator}: Wahlnachricht für die Terminierung der aktuellen Berechnung; Initiator ist der Initiator dieser Wahl (z.B. Name des ggT-Prozesses).
     {abstimmung, Initiator} ->
-      log(ClientName, format("Vote from ~p.", [Initiator])),
-      % TODO
-      with_number(State);
+      log(ClientName, format("Vote request from ~p.", [Initiator])),
+      with_number(abstimmung(State, Initiator));
 
     {tellmi, From} ->
       log(ClientName, format("Tell ~p the number (~B).", [From, Number])),
@@ -149,10 +157,42 @@ send_y(State = #state{number = Number, client_name = ClientName, coordinator = C
       Number
   end,
 
-  State#state{number = NewNumberSafe}.
+  restart_vote_timer(State#state{number = NewNumberSafe, number_retrieval_time = current_time_milliseconds(), has_started_vote = false}).
 
 send_number_to_neighbors(Number, LeftNeighbor, RightNeighbor) ->
   lists:foreach(fun(Neighbor) -> Neighbor ! {sendy, Number} end, [LeftNeighbor, RightNeighbor]).
+
+abstimmung(State = #state{termination_time = TerminationTime, number_retrieval_time = NumberRetrievalTime, client_name = ClientName, left_neighbor = LeftNeighbor, right_neighbor = RightNeighbor, coordinator = Coordinator, number = Number}, Initiator) ->
+  case Initiator of
+    _Initiator = ClientName ->
+      log(ClientName, format("I started the vote (~p = ~p).", [Initiator, ClientName])),
+      RightNeighbor ! {abstimmung, ClientName};
+
+    _ ->
+      log(ClientName, format("He started the vote (he ~p != me ~p).", [Initiator, ClientName])),
+
+      % ist seit dem letzten Empfang einer Zahl mehr als **/2 (** halbe) Sekunden vergangen, dann leitet er die Anfrage an seinen rechten Nachbarn weiter (implizites Zustimmen)
+      case current_time_milliseconds() - NumberRetrievalTime > TerminationTime / 2 of
+        true ->
+          log(ClientName, "Accept vote request"),
+
+          case Initiator of
+            % Erhält ein initiierende Prozess von seinem linken Nachbarn die Anfrage nach der Terminierung (abstimmung), meldet er die Terminierung dem Koordinator.
+            _Initiator = LeftNeighbor ->
+              log(ClientName, "Vote request from left neighbor --> Send termination request to coordinator."),
+              Coordinator ! {briefterm, {ClientName, Number, werkzeug:timeMilliSecond()}};
+
+            _ ->
+              log(ClientName, "Vote request from someone else"),
+              RightNeighbor ! {abstimmung, ClientName}
+          end;
+
+        _ ->
+          log(ClientName, "Ignore vote request")
+      end
+  end,
+
+  State#state{has_started_vote = Initiator =:= ClientName}.
 
 % {tellmi,From}: Sendet das aktuelle Mi an From. Kann z.B. vom Koordinator genutzt werden, um bei einem Berechnungsstillstand die Mi-Situation im Ring anzuzeigen.
 tell_mi(State = #state{number = Number}, From) ->
@@ -168,6 +208,19 @@ gcd(Number, Y, DelayTime) ->
     _    -> Number
   end.
 
+
+start_vote_timer(TerminationTime, ClientName) ->
+  log(ClientName, format("start timer with msg ~p. will fire in ~Bms.", [ClientName, TerminationTime])),
+  {ok, Timer} = timer:send_after(TerminationTime, {abstimmung, ClientName}),
+  Timer.
+
+restart_vote_timer(State = #state{termination_time = TerminationTime, client_name = ClientName}) ->
+  State#state{vote_timer = start_vote_timer(TerminationTime, ClientName)}.
+
+
+current_time_milliseconds() ->
+  {Mega, Sec, Micro} = now(),
+  Mega*1000000000 + Sec*1000 + Micro/1000.
 
 
 % Ein ggT-Prozess hat den Namen ?????, wobei ????? eine Zahl ist, die sich wie folgt zusammensetzt: 
