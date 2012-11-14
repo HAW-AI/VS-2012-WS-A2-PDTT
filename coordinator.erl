@@ -11,6 +11,9 @@
                     }).
 
 start() ->
+  spawn(fun initialize/0).
+
+initialize() ->
   %%% read config from file into State
   State = read_config_into_state(#state{}),
 
@@ -29,16 +32,17 @@ start() ->
           log("Erfolgreich beim Namensdienst gebunden"),
 
           %%% done with the start phase. everything worked. go into initial state.
-          spawn(fun() -> initial(State) end);
+          initial(State);
 
         in_use ->
           %%% something went wrong. the coordinator is already bound at the Nameservice.
-          log_error("Binden beim Namesdienst fehlgeschlagen. Der Name ist bereits vergeben.")
+          log_error("Binden beim Namesdienst fehlgeschlagen. Der Name ist bereits vergeben."),
+          terminating(State)
         end;
 
     error ->
       log_error("Namensdienst nicht verfuegbar"),
-      error
+      terminating(State)
 
   end.
 
@@ -95,18 +99,20 @@ ready(State) ->
   receive
     start_distributed_gcd_calculation ->
       {GCD, _} = calculate_gcd_seed(),
-      start_gcd_process(State, GCD);
+      start_gcd_process(State, GCD),
+      ready(State);
 
     {start_distributed_gcd_calculation, GCD} when
         is_integer(GCD) andalso GCD > 0 ->
-      start_gcd_process(State, GCD);
+      start_gcd_process(State, GCD),
+      ready(State);
 
     {briefmi, {ClientName, CMi, CZeit}} ->
-      log(format("Client ~B calculated new Mi ~B at ~B", [ClientName, CMi, CZeit])),
+      log(format("Client ~p calculated new Mi ~p at ~p", [ClientName, CMi, CZeit])),
       ready(State);
 
     {briefterm, {ClientName, CMi, CZeit}} ->
-      log(format("Client ~B finished calculation with Mi ~B at ~B", [ClientName, CMi, CZeit])),
+      log(format("Client ~p finished calculation with Mi ~p at ~p", [ClientName, CMi, CZeit])),
       ready(State);
 
     reset ->
@@ -127,9 +133,7 @@ terminating(State) ->
   kill_all_gcd_clients(State),
 
   log("Trying to unbind coordinator name at nameservice"),
-  send_message_to_service(State,
-                          nameservice,
-                          {unbind, get_coordinator_name(State)}),
+  global:whereis_name(nameservice) ! {self(), {unbind, get_coordinator_name(State)}},
   log("Terminating coordinator process. Goodbye."),
   exit(self()).
 
@@ -139,8 +143,14 @@ terminating(State) ->
 start_distributed_gcd_calculation() ->
   send_message_to_coordinator(start_distributed_gcd_calculation).
 
+start_distributed_gcd_calculation(GCD) when is_integer(GCD) andalso GCD > 0 ->
+  send_message_to_coordinator({start_distributed_gcd_calculation, GCD}).
+
 get_ready() ->
   send_message_to_coordinator(get_ready).
+
+reset() ->
+  send_message_to_coordinator(reset).
 
 stop() ->
   kill().
@@ -285,7 +295,7 @@ introduce_clients_to_their_neighbors(State) ->
   log("Introducing GCD clients to their neighbors"),
   orddict:map(
     fun(Key, Value) ->
-        log(format("set GCD client ~B: left neighbor: ~B, right neighbor: ~B",
+        log(format("set GCD client ~p: left neighbor: ~p, right neighbor: ~p",
                    [Key,
                     Value#gcd_client.left_neighbor,
                     Value#gcd_client.right_neighbor])),
@@ -302,7 +312,7 @@ set_calculation_seed_in_gcd_clients(State, GCD) ->
   lists:map(
     fun(ClientName) ->
       {GCD, ProductOfGCD} = calculate_gcd_seed(GCD),
-      log(format("Der ggT-Prozess ~B initiales Mi ~B", [ClientName, ProductOfGCD])),
+      log(format("Der ggT-Prozess ~p initiales Mi ~p", [ClientName, ProductOfGCD])),
       send_message_to_service(State, ClientName, {setpm, ProductOfGCD})
     end,
     ClientsNamesList),
@@ -330,7 +340,7 @@ kill_all_gcd_clients(State) ->
 
   lists:map(
     fun(ClientName) ->
-      log(format("Sending the kill command to GCD-process ~B", [ClientName])),
+      log(format("Sending the kill command to GCD-process ~p", [ClientName])),
       send_message_to_service(State, ClientName, kill)
     end,
     ClientsNamesList).
@@ -373,7 +383,7 @@ shuffle(List, Acc) ->
 calculate_gcd_seed() ->
   %%% randomly pick a GCD between 1..100
   RequestedGCD = random:uniform(100),
-  log(format("Der neue gesuchte GGT ist ~B", [RequestedGCD])),
+  log(format("Der neue gesuchte GGT ist ~p", [RequestedGCD])),
   calculate_gcd_seed(RequestedGCD).
 
 calculate_gcd_seed(RequestedGCD) ->
@@ -453,7 +463,7 @@ send_message_to_service(State, ServiceName, Message) ->
         not_found -> not_found;
 
         %%% everything is good. send message.
-        ServicePid -> ServicePid ! Message
+        {ok, ServicePid} -> ServicePid ! Message
       end;
 
     _ ->
