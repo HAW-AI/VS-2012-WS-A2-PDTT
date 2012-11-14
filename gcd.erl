@@ -62,6 +62,8 @@ start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, Tea
 
 % {setneighbors,LeftN,RightN}: die (lokal auf deren Node registrieten und im Namensdienst registrierten) Namen des linken und rechten Nachbarn werden gesetzt.
 wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordinator) ->
+  log(ClientName, "Waiting for neighbors..."),
+
   receive
     {setneighbors, LeftNeighbor, RightNeighbor} ->
       log(ClientName, format("Set neighbors to ~p (left) and ~p (right).", [LeftNeighbor, RightNeighbor])),
@@ -78,6 +80,8 @@ wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordina
 
 % {setpm,MiNeu}: die von diesem Prozess zu berabeitenden Zahl für eine neue Berechnung wird gesetzt.
 wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator, LeftNeighbor, RightNeighbor) ->
+  log(ClientName, "Waiting for number..."),
+  
   receive
     {setpm, Number} ->
       log(ClientName, format("wait_for_number: Set Number to ~B.", [Number])),
@@ -100,7 +104,9 @@ wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator
       wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator, LeftNeighbor, RightNeighbor)
   end.
 
-with_number(State = #state{client_name = ClientName}) ->
+with_number(State = #state{client_name = ClientName, number = Number}) ->
+  log(ClientName, "Waiting for incomming messages..."),
+  
   receive
     {sendy, Y} ->
       log(ClientName, format("New Y: ~B.", [Y])),
@@ -113,7 +119,7 @@ with_number(State = #state{client_name = ClientName}) ->
       with_number(State);
 
     {tellmi, From} ->
-      log(ClientName, format("Tell ~p the number.", [From])),
+      log(ClientName, format("Tell ~p the number (~B).", [From, Number])),
       with_number(tell_mi(State, From));
 
     % kill: der ggT-Prozess wird beendet.
