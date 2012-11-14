@@ -20,7 +20,7 @@
 % die benötigten Kontaktdaten für den Namensdienst
 %                             und den Koordinator
 % Der ggT-Prozess meldet sich beim Koordinator mit seinem Namen an (hello) und beim Namensdienst (rebind). Er registriert sich ebenfalls lokal auf der Erlang-Node mit seinem Namen (register). Der ggT-Prozess erwartet dann vom Koordinator die Informationen über seine Nachbarn (setneighbors).
-start(DelayTime, TerminationTime, ProcessNumber, StarterNumber, GroupNumber, TeamNumber, NameServiceNode, CoordinatorName) ->
+start(DelayTime, TerminationTime, ProcessNumber, GroupNumber, TeamNumber, NameServiceNode, CoordinatorName, StarterNumber) ->
   ClientName = client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber),
   Log = fun (Msg) -> log(ClientName, Msg) end,
 
