@@ -179,11 +179,11 @@ abstimmung(State = #state{termination_time = TerminationTime, number_retrieval_t
           case Initiator of
             % Erhält ein initiierende Prozess von seinem linken Nachbarn die Anfrage nach der Terminierung (abstimmung), meldet er die Terminierung dem Koordinator.
             _Initiator = LeftNeighbor ->
-              log(ClientName, "Vote request from left neighbor --> Send termination request to coordinator."),
+              log(ClientName, format("Vote request from left neighbor (~p) --> Send termination request to coordinator.", [LeftNeighbor])),
               Coordinator ! {briefterm, {ClientName, Number, werkzeug:timeMilliSecond()}};
 
             _ ->
-              log(ClientName, "Vote request from someone else"),
+              log(ClientName, format("Vote request from someone else. Pass request to right neighbor (~p).", [RightNeighbor])),
               RightNeighbor ! {abstimmung, ClientName}
           end;
 
