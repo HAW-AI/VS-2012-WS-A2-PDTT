@@ -123,6 +123,10 @@ with_number(State = #state{client_name = ClientName, number = Number, name_servi
   log(ClientName, "Waiting for incomming messages..."),
   
   receive
+    {setpm,MiNeu} ->
+      log(ClientName, format("New Number: ~B.", [MiNeu])),
+      with_number(setpm(State, MiNeu));
+
     {sendy, Y} ->
       log(ClientName, format("New Y: ~B.", [Y])),
       with_number(send_y(State, Y));
@@ -151,6 +155,10 @@ with_number(State = #state{client_name = ClientName, number = Number, name_servi
       with_number(State)
   end.
 
+
+% die von diesem Prozess zu berabeitenden Zahl für eine neue Berechnung wird gesetzt.
+setpm(State, NewNumber) ->
+  restart_vote_timer(State#state{number = NewNumber}).
 
 % {sendy,Y}: der rekursive Aufruf der ggT Berechnung.
 send_y(State = #state{number = Number, client_name = ClientName, coordinator = Coordinator, left_neighbor = LeftNeighbor, right_neighbor = RightNeighbor, delay_time = DelayTime}, Y) ->
