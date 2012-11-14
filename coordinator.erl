@@ -87,7 +87,12 @@ get_ready(State) ->
   log("Entering State: Get Ready"),
   %%% arrange the gcd clients in a ring and go into ready state
   log("Building ring of GCD Clients"),
-  StateWithRing = State#state{clients = build_ring_of_gcd_clients(get_clients(State))},
+  ClientsWithRing = case build_ring_of_gcd_clients(get_clients(State)) of
+    error -> terminating(State);
+    ClientsRing -> ClientsRing
+  end,
+
+  StateWithRing = State#state{clients = ClientsWithRing},
 
   %%% this sends the {setneighbors, LeftN, RightN} message to each client
   introduce_clients_to_their_neighbors(StateWithRing),
@@ -219,9 +224,10 @@ build_ring_of_gcd_clients(Clients) ->
   %%% that client would have himself as his left and right neighbor and would
   %%% send himself 2 messages.
   %%% TODO decide if we should increment this to < 3 to have distinct neighbors
-  case length(Clients) < 2 of
+  case orddict:size(Clients) < 2 of
     true ->
-      log("Bauen des Rings aus GGT Clients fehlgeschlagen"),
+      log_error("Building the GCD ring failed."),
+      log_error("Building a ring of less than two clients is not possible"),
       error;
     false ->
       ClientsList = orddict:fetch_keys(Clients),
