@@ -134,8 +134,8 @@ with_number(State = #state{client_name = ClientName, number = Number}) ->
 
 
 % {sendy,Y}: der rekursive Aufruf der ggT Berechnung.
-send_y(State = #state{number = Number, client_name = ClientName, coordinator = Coordinator, left_neighbor = LeftNeighbor, right_neighbor = RightNeighbor}, Y) ->
-  NewNumberSafe = case gcd(Number, Y) of
+send_y(State = #state{number = Number, client_name = ClientName, coordinator = Coordinator, left_neighbor = LeftNeighbor, right_neighbor = RightNeighbor, delay_time = DelayTime}, Y) ->
+  NewNumberSafe = case gcd(Number, Y, DelayTime) of
     NewNumber when NewNumber =/= Number ->
       Coordinator ! {briefmi, {ClientName, NewNumber, werkzeug:timeMilliSecond()}},
       send_number_to_neighbors(NewNumber, LeftNeighbor, RightNeighbor),
@@ -156,7 +156,9 @@ tell_mi(State = #state{number = Number}, From) ->
   State.
 
 
-gcd(Number, Y) ->
+gcd(Number, Y, DelayTime) ->
+  timer:sleep(DelayTime),
+
   case Y < Number of
     true -> ((Number-1) rem Y) + 1;
     _    -> Number
