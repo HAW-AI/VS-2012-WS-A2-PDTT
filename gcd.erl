@@ -30,11 +30,11 @@ init(DelayTime, TerminationTime, ProcessNumber, GroupNumber, TeamNumber, NameSer
 
   Log(format("~s Start GCD client ~s with PID ~p on node ~p.", [werkzeug:timeMilliSecond(), ClientName, self(), node()])),
 
-  register(list_to_atom(ClientName), self()),
+  register(ClientName, self()),
 
   case name_service(NameServiceNode) of
     {ok, NameService} ->
-      NameService ! {self(), {rebind, list_to_atom(ClientName), node()}},
+      NameService ! {self(), {rebind, ClientName, node()}},
       Log(format("Registered with name service on node ~p.", [NameServiceNode])),
 
       receive
@@ -45,7 +45,7 @@ init(DelayTime, TerminationTime, ProcessNumber, GroupNumber, TeamNumber, NameSer
             {ok, Coordinator} ->
               Log(format("Resolved coordinator to ~p.", [Coordinator])),
 
-              Coordinator ! {hello, list_to_atom(ClientName)},
+              Coordinator ! {hello, ClientName},
               Log("Contacted coordinator."),
               wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordinator);
 
@@ -141,7 +141,7 @@ with_number(State = #state{client_name = ClientName, number = Number}) ->
 send_y(State = #state{number = Number, client_name = ClientName, coordinator = Coordinator, left_neighbor = LeftNeighbor, right_neighbor = RightNeighbor, delay_time = DelayTime}, Y) ->
   NewNumberSafe = case gcd(Number, Y, DelayTime) of
     NewNumber when NewNumber =/= Number ->
-      Coordinator ! {briefmi, {list_to_atom(ClientName), NewNumber, werkzeug:timeMilliSecond()}},
+      Coordinator ! {briefmi, {ClientName, NewNumber, werkzeug:timeMilliSecond()}},
       send_number_to_neighbors(NewNumber, LeftNeighbor, RightNeighbor),
       NewNumber;
 
@@ -174,7 +174,7 @@ gcd(Number, Y, DelayTime) ->
 %    <PraktikumsgruppenID><TeamID><Nummer des ggT-Prozess><Nummer des Starters>, 
 % also z.B. ist in der Praktikumsgruppe 4 von dem Team 03 ein zweiter ggT-Prozess von ihrem ersten Starter gestartet worden, so erhält dieser ggT-Prozess den Namen 4321. In der Kommunikation wird nur dieser Name verwendet!  
 client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber) ->
-  format("~B~B~B~B", [GroupNumber, TeamNumber, ProcessNumber, StarterNumber]).
+  list_to_atom(format("~B~B~B~B", [GroupNumber, TeamNumber, ProcessNumber, StarterNumber])).
 
 name_service(NameServiceNode) ->
   case net_adm:ping(NameServiceNode) of
@@ -197,7 +197,7 @@ coordinator(NameService, CoordinatorName) ->
   end.
 
 log(ClientName, Msg) ->
-  werkzeug:logging(format("GGTP_~s@~s.log", [ClientName, net_adm:localhost()]), format("~s~n", [Msg])).
+  werkzeug:logging(format("GGTP_~s@~s.log", [atom_to_list(ClientName), net_adm:localhost()]), format("~s~n", [Msg])).
 
 format(String, Arguments) ->
   lists:flatten(io_lib:format(String, Arguments)).
