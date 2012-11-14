@@ -142,7 +142,7 @@ send_y(State = #state{number = Number, client_name = ClientName, coordinator = C
   State#state{number = NewNumberSafe}.
 
 send_number_to_neighbors(Number, LeftNeighbor, RightNeighbor) ->
-  lists:foreach(fun(Neighbor) -> Neighbor ! {send_y, Number} end, [LeftNeighbor, RightNeighbor]).
+  lists:foreach(fun(Neighbor) -> Neighbor ! {sendy, Number} end, [LeftNeighbor, RightNeighbor]).
 
 % {tellmi,From}: Sendet das aktuelle Mi an From. Kann z.B. vom Koordinator genutzt werden, um bei einem Berechnungsstillstand die Mi-Situation im Ring anzuzeigen.
 tell_mi(State = #state{number = Number}, From) ->
