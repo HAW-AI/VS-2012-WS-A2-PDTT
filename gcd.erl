@@ -80,6 +80,7 @@ wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordina
 
     kill ->
       log(ClientName, "wait_for_neighbors: kill."),
+      unbind_from_name_service(ClientName, NameService),
       ok;
 
     Unknown ->
@@ -110,6 +111,7 @@ wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator
 
     kill ->
       log(ClientName, "wait_for_number: kill."),
+      unbind_from_name_service(ClientName, NameService),
       ok;
 
     Unknown ->
@@ -117,7 +119,7 @@ wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator
       wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator, LeftNeighbor, RightNeighbor)
   end.
 
-with_number(State = #state{client_name = ClientName, number = Number}) ->
+with_number(State = #state{client_name = ClientName, number = Number, name_service = NameService}) ->
   log(ClientName, "Waiting for incomming messages..."),
   
   receive
@@ -137,6 +139,7 @@ with_number(State = #state{client_name = ClientName, number = Number}) ->
     % kill: der ggT-Prozess wird beendet.
     kill ->
       log(ClientName, "with_number: kill."),
+      unbind_from_name_service(ClientName, NameService),
       ok;
 
     Unknown ->
@@ -221,6 +224,14 @@ restart_vote_timer(State = #state{termination_time = TerminationTime, client_nam
 current_time_milliseconds() ->
   {Mega, Sec, Micro} = now(),
   Mega*1000000000 + Sec*1000 + Micro/1000.
+
+
+unbind_from_name_service(ClientName, NameService) ->
+  log(ClientName, "Unbinding from name service..."),
+  NameService ! {self(), {unbind, ClientName}},
+  receive 
+    ok -> log(ClientName, "...done.")
+  end.
 
 
 % Ein ggT-Prozess hat den Namen ?????, wobei ????? eine Zahl ist, die sich wie folgt zusammensetzt: 
