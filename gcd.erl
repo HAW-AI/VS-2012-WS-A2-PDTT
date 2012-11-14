@@ -20,7 +20,11 @@
 % die benötigten Kontaktdaten für den Namensdienst
 %                             und den Koordinator
 % Der ggT-Prozess meldet sich beim Koordinator mit seinem Namen an (hello) und beim Namensdienst (rebind). Er registriert sich ebenfalls lokal auf der Erlang-Node mit seinem Namen (register). Der ggT-Prozess erwartet dann vom Koordinator die Informationen über seine Nachbarn (setneighbors).
+
 start(DelayTime, TerminationTime, ProcessNumber, GroupNumber, TeamNumber, NameServiceNode, CoordinatorName, StarterNumber) ->
+  spawn(fun()-> init(DelayTime, TerminationTime, ProcessNumber, GroupNumber, TeamNumber, NameServiceNode, CoordinatorName, StarterNumber) end).
+
+init(DelayTime, TerminationTime, ProcessNumber, GroupNumber, TeamNumber, NameServiceNode, CoordinatorName, StarterNumber) ->
   ClientName = client_name(GroupNumber, TeamNumber, ProcessNumber, StarterNumber),
   Log = fun (Msg) -> log(ClientName, Msg) end,
 
@@ -30,7 +34,7 @@ start(DelayTime, TerminationTime, ProcessNumber, GroupNumber, TeamNumber, NameSe
 
   case name_service(NameServiceNode) of
     {ok, NameService} ->
-      NameService ! {self(), {rebind, ClientName, node()}},
+      NameService ! {self(), {rebind, list_to_atom(ClientName), node()}},
       Log(format("Registered with name service on node ~p.", [NameServiceNode])),
 
       receive
@@ -41,7 +45,7 @@ start(DelayTime, TerminationTime, ProcessNumber, GroupNumber, TeamNumber, NameSe
             {ok, Coordinator} ->
               Log(format("Resolved coordinator to ~p.", [Coordinator])),
 
-              Coordinator ! {hello, ClientName},
+              Coordinator ! {hello, list_to_atom(ClientName)},
               Log("Contacted coordinator."),
               wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordinator);
 
@@ -137,7 +141,7 @@ with_number(State = #state{client_name = ClientName, number = Number}) ->
 send_y(State = #state{number = Number, client_name = ClientName, coordinator = Coordinator, left_neighbor = LeftNeighbor, right_neighbor = RightNeighbor, delay_time = DelayTime}, Y) ->
   NewNumberSafe = case gcd(Number, Y, DelayTime) of
     NewNumber when NewNumber =/= Number ->
-      Coordinator ! {briefmi, {ClientName, NewNumber, werkzeug:timeMilliSecond()}},
+      Coordinator ! {briefmi, {list_to_atom(ClientName), NewNumber, werkzeug:timeMilliSecond()}},
       send_number_to_neighbors(NewNumber, LeftNeighbor, RightNeighbor),
       NewNumber;
 
