@@ -237,7 +237,7 @@ build_ring_of_gcd_clients(Clients) ->
       log_error("Building a ring of less than two clients is not possible"),
       error;
     false ->
-      ClientsList = orddict:fetch_keys(Clients),
+      ClientsList = shuffle(orddict:fetch_keys(Clients)),
       [Pivot | Tail] = ClientsList,
       build_ring_of_gcd_clients(Clients,
                                 orddict:fetch(Pivot, Clients),
@@ -413,7 +413,7 @@ calculate_gcd_seed(RequestedGCD) ->
 
 %%% Log function for all coordinator logs
 log(Message)->
-  CoordinatorName= lists:concat(["Koordinator@",net_adm:localhost()]),
+  CoordinatorName= lists:concat(["Koordinator@", inet:gethostname()]),
   LogMessage = lists:concat([CoordinatorName,
                              werkzeug:timeMilliSecond(),
                              " ",

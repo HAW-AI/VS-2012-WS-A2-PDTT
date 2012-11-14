@@ -93,14 +93,14 @@ format(String, ArgumentsList) ->
 
 %%% Log function for all coordinator logs
 log(Message, StarterNumber)->
-  StarterName= lists:concat(["Starter@",net_adm:localhost()]),
+  StarterName= lists:concat(["Starter@", inet:gethostname()]),
   LogMessage = lists:concat([StarterName,
                              werkzeug:timeMilliSecond(),
                              " ",
                              Message,
                              io_lib:nl()]),
 
-  werkzeug:logging(format("gcd-~B@~s.log", [StarterNumber, net_adm:localhost()]), LogMessage).
+  werkzeug:logging(format("ggt~B@~s.log", [StarterNumber,  inet:gethostname()]), LogMessage).
 
 log_error(ErrorMessage, StarterNumber) ->
   Message = lists:concat(["##### ","Error: ", ErrorMessage, " #####"]),
