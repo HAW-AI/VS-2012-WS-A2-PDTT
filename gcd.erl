@@ -142,6 +142,10 @@ with_number(State = #state{client_name = ClientName, number = Number, name_servi
       unbind_from_name_service(ClientName, NameService),
       ok;
 
+    start_vote ->
+      log(ClientName, "Timer fired! Start vote."),
+      with_number(start_vote(State));
+
     Unknown ->
       log(ClientName, format("with_number: Unknown message ~p.", [Unknown])),
       with_number(State)
@@ -165,11 +169,12 @@ send_y(State = #state{number = Number, client_name = ClientName, coordinator = C
 send_number_to_neighbors(Number, LeftNeighbor, RightNeighbor) ->
   lists:foreach(fun(Neighbor) -> Neighbor ! {sendy, Number} end, [LeftNeighbor, RightNeighbor]).
 
-abstimmung(State = #state{termination_time = TerminationTime, number_retrieval_time = NumberRetrievalTime, client_name = ClientName, left_neighbor = LeftNeighbor, right_neighbor = RightNeighbor, coordinator = Coordinator, number = Number}, Initiator) ->
+abstimmung(State = #state{termination_time = TerminationTime, number_retrieval_time = NumberRetrievalTime, client_name = ClientName, right_neighbor = RightNeighbor, coordinator = Coordinator, number = Number}, Initiator) ->
   case Initiator of
+    % Erhält ein initiierende Prozess von seinem linken Nachbarn die Anfrage nach der Terminierung (abstimmung), meldet er die Terminierung dem Koordinator.
     _Initiator = ClientName ->
-      log(ClientName, format("I started the vote (~p = ~p).", [Initiator, ClientName])),
-      RightNeighbor ! {abstimmung, ClientName};
+      log(ClientName, format("I started the vote (he ~p = me ~p). --> Send termination request to coordinator.", [Initiator, ClientName])),
+      Coordinator ! {briefterm, {ClientName, Number, werkzeug:timeMilliSecond()}};
 
     _ ->
       log(ClientName, format("He started the vote (he ~p != me ~p).", [Initiator, ClientName])),
@@ -177,30 +182,25 @@ abstimmung(State = #state{termination_time = TerminationTime, number_retrieval_t
       % ist seit dem letzten Empfang einer Zahl mehr als **/2 (** halbe) Sekunden vergangen, dann leitet er die Anfrage an seinen rechten Nachbarn weiter (implizites Zustimmen)
       case current_time_milliseconds() - NumberRetrievalTime > TerminationTime / 2 of
         true ->
-          log(ClientName, "Accept vote request"),
-
-          case Initiator of
-            % Erhält ein initiierende Prozess von seinem linken Nachbarn die Anfrage nach der Terminierung (abstimmung), meldet er die Terminierung dem Koordinator.
-            _Initiator = LeftNeighbor ->
-              log(ClientName, format("Vote request from left neighbor (~p) --> Send termination request to coordinator.", [LeftNeighbor])),
-              Coordinator ! {briefterm, {ClientName, Number, werkzeug:timeMilliSecond()}};
-
-            _ ->
-              log(ClientName, format("Vote request from someone else. Pass request to right neighbor (~p).", [RightNeighbor])),
-              RightNeighbor ! {abstimmung, ClientName}
-          end;
+          log(ClientName, format("Accept vote request. Pass request to right neighbor (~p).", [RightNeighbor])),
+          RightNeighbor ! {abstimmung, Initiator};
 
         _ ->
           log(ClientName, "Ignore vote request")
       end
   end,
 
-  State#state{has_started_vote = Initiator =:= ClientName}.
+  State.
 
 % {tellmi,From}: Sendet das aktuelle Mi an From. Kann z.B. vom Koordinator genutzt werden, um bei einem Berechnungsstillstand die Mi-Situation im Ring anzuzeigen.
 tell_mi(State = #state{number = Number}, From) ->
   From ! Number,
   State.
+
+start_vote(State = #state{client_name = ClientName, right_neighbor = RightNeighbor}) ->
+  log(ClientName, format("Start vote by sending request to right neighbor (~p).", [RightNeighbor])),
+  RightNeighbor ! {abstimmung, ClientName},
+  State#state{has_started_vote = true}.
 
 
 gcd(Number, Y, DelayTime) ->
@@ -213,11 +213,18 @@ gcd(Number, Y, DelayTime) ->
 
 
 start_vote_timer(TerminationTime, ClientName) ->
-  log(ClientName, format("start timer with msg ~p. will fire in ~Bms.", [ClientName, TerminationTime])),
-  {ok, Timer} = timer:send_after(TerminationTime, {abstimmung, ClientName}),
+  log(ClientName, format("Start timer. I am ~p. Will fire in ~Bms.", [ClientName, TerminationTime])),
+  {ok, Timer} = timer:send_after(TerminationTime, start_vote),
   Timer.
 
-restart_vote_timer(State = #state{termination_time = TerminationTime, client_name = ClientName}) ->
+restart_vote_timer(State = #state{termination_time = TerminationTime, client_name = ClientName, vote_timer = OldVoteTimer}) ->
+  case timer:cancel(OldVoteTimer) of
+    {error, Reason} ->
+      log(ClientName, format("Could not cancel old vote timer. Reason: ~p.", [Reason]));
+
+    _ ->
+      log(ClientName, "Canceled old vote timer.")
+  end,
   State#state{vote_timer = start_vote_timer(TerminationTime, ClientName)}.
 
 
@@ -261,7 +268,8 @@ coordinator(NameService, CoordinatorName) ->
   end.
 
 log(ClientName, Msg) ->
-  werkzeug:logging(format("GGTP_~s@~s.log", [atom_to_list(ClientName), net_adm:localhost()]), format("~s~n", [Msg])).
+  werkzeug:logging(format("GGTP_~s@~s.log", [atom_to_list(ClientName), net_adm:localhost()]),
+                   format("~s ~s~n", [werkzeug:timeMilliSecond(), Msg])).
 
 format(String, Arguments) ->
   lists:flatten(io_lib:format(String, Arguments)).
