@@ -14,60 +14,41 @@ start() ->
   %%% read config from file into State
   State = read_config_into_state(#state{}),
 
+  %%% register coordinator name locally
+  register(get_coordinator_name(State), self()),
+
   %%% ping NameServiceNode
   case ping_name_service(get_nameservice_node_name(State)) of
     {ok, NameService} ->
       %%% first time bind of our service with the nameservice
-      NameService ! {self(), {bind, get_coordinator_name(State), node()}},
+      %%% use rebind just in case a previous coordinator did not shut down cleanly
+      NameService ! {self(), {rebind, get_coordinator_name(State), node()}},
 
       receive
         ok ->
-          io:format("..bind.done.\n"),
-          %%% register coordinator name locally
-          register(get_coordinator_name(State), self()),
+          log("Erfolgreich beim Namensdienst gebunden"),
 
           %%% done with the start phase. everything worked. go into initial state.
           spawn(fun() -> initial(State) end);
 
         in_use ->
           %%% something went wrong. the coordinator is already bound at the Nameservice.
-          io:format("..schon gebunden.\n")
-      end;
+          log_error("Binden beim Namesdienst fehlgeschlagen. Der Name ist bereits vergeben.")
+        end;
 
     error ->
-      %%% TODO log the error
+      log_error("Namensdienst nicht verfuegbar"),
       error
 
   end.
 
-
-stop() ->
-  {ok, Config} = read_config_from_file(),
-
-  %%% ping NameServiceNode
-  case ping_name_service(proplists:get_value(nameservicenode, Config)) of
-    {ok, NameService} ->
-      %%% unbind name with Nameservice
-      NameService ! {self(), {unbind, proplists:get_value(koordinatorname, Config)}},
-
-      receive
-        ok ->
-          io:format("..unbind..done.\n"),
-          exit(self())
-      end;
-
-    error ->
-      %%% TODO log the error
-      error
-  end,
-  ok.
-
-
 %%% initial state the coordinator goes into after the start phase
 initial(State) ->
+  log("Eintritt in Zustand: Initial"),
   receive
     % Die Anfrage nach den steuernden Werten durch den Starter Prozess.
     {getsteeringval, StarterPID} ->
+      log("Starter fragt nach Steuerwerten."),
       StarterPID ! {steeringval,
                     get_processing_time(State),
                     get_termination_time(State),
@@ -77,12 +58,17 @@ initial(State) ->
 
     % Ein ggT-Prozess meldet sich beim Koordinator mit Namen Clientname an (Name ist der lokal registrierte Name!).
     {hello, ClientName} ->
+      log(lists:concat(["Client hat sich registriert unter namen: ", ClientName])),
       initial(register_gcd_client(State, ClientName));
 
     %%% once somebody triggers the calculation of the distributed gcd
     %%% the coordinator starts building "The Ring"
-    start_distributed_gcd_calculation ->
-      build_ring(State);
+    get_ready ->
+      get_ready(State);
+
+    %%% the coordinator has to kill all gcd clients, unbind it's name and shutdown
+    kill ->
+      terminating(State);
 
     _Unknown ->
       %%% TODO handle unknown message. need to catch these otherwise they will
@@ -91,53 +77,76 @@ initial(State) ->
       initial(State)
 
   end,
-
   ok.
 
-build_ring(State) ->
-  %%% TODO log that the ring is being built
+get_ready(State) ->
+  log("Entering State: Get Ready"),
   %%% arrange the gcd clients in a ring and go into ready state
+  log("Building ring of GCD Clients"),
   StateWithRing = State#state{clients = build_ring_of_gcd_clients(get_clients(State))},
 
   %%% this sends the {setneighbors, LeftN, RightN} message to each client
   introduce_clients_to_their_neighbors(StateWithRing),
 
+  log("Entering State: Ready"),
   ready(StateWithRing).
 
 ready(State) ->
-  {GCD, _} = calculate_gcd_seed(),
-  set_calculation_seed_in_gcd_clients(State, GCD),
-  start_calculation_for_a_few_gcd_clients(State, GCD),
+  receive
+    start_distributed_gcd_calculation ->
+      {GCD, _} = calculate_gcd_seed(),
+      start_gcd_process(State, GCD);
+
+    {start_distributed_gcd_calculation, GCD} when
+        is_integer(GCD) andalso GCD > 0 ->
+      start_gcd_process(State, GCD);
+
+    {briefmi, {ClientName, CMi, CZeit}} ->
+      log(format("Client ~B calculated new Mi ~B at ~B", [ClientName, CMi, CZeit])),
+      ready(State);
+
+    {briefterm, {ClientName, CMi, CZeit}} ->
+      log(format("Client ~B finished calculation with Mi ~B at ~B", [ClientName, CMi, CZeit])),
+      ready(State);
+
+    reset ->
+      log("Received reset command. Killing all gcd clients and going into initial state"),
+      kill_all_gcd_clients(State),
+      initial(State#state{clients=orddict:new()});
+
+    %%% the coordinator has to kill all gcd clients, unbind it's name and shutdown
+    kill ->
+      terminating(State)
+  end,
   ok.
+
+terminating(State) ->
+  log("Coordinator received kill command"),
+  log("Start killing GCD clients"),
+  %%% send the kill command to all registered clients
+  kill_all_gcd_clients(State),
+
+  log("Trying to unbind coordinator name at nameservice"),
+  send_message_to_service(State,
+                          nameservice,
+                          {unbind, get_coordinator_name(State)}),
+  log("Terminating coordinator process. Goodbye."),
+  exit(self()).
 
 %%% call this module function and it will start the coordiator that is
 %%% registered with the name service, given that coordinator is in the
 %%% initial state.
 start_distributed_gcd_calculation() ->
-  {ok, Config} = read_config_from_file(),
-  CoordinatorName = proplists:get_value(koordinatorname, Config),
-  NameServiceNode = proplists:get_value(nameservicenode, Config),
+  send_message_to_coordinator(start_distributed_gcd_calculation).
 
+get_ready() ->
+  send_message_to_coordinator(get_ready).
 
-  %%% ping NameServiceNode
-  case ping_name_service(NameServiceNode) of
-    {ok, _NameService} ->
-      %%% lookup the name and node of the current coordinator in charge
-      case nameservice_lookup(CoordinatorName) of
-        not_found -> io:format("..meindienst..not_found.\n");
+stop() ->
+  kill().
 
-        %%% the message should only be received by a coordiator in the
-        %%% initial state
-        ServicePid -> ServicePid ! start_distributed_gcd_calculation
-      end;
-
-    _ ->
-      %%% TODO log the error
-      error
-  end.
-
-terminating() ->
-  ok.
+kill() ->
+  send_message_to_coordinator(kill).
 
 %%% read config from file into state and return new state
 read_config_into_state(State) ->
@@ -188,17 +197,6 @@ register_gcd_client(State, ClientName) ->
   UpdatedClients = update_clients_with_client(Clients, ClientName, #gcd_client{name=ClientName}),
   State#state{clients=UpdatedClients}.
 
-%%% ping the nameservice in order to introduce our nodes to each other
-ping_name_service(NameServiceNode) ->
-  case net_adm:ping(NameServiceNode) of
-    pong ->
-      global:sync(),
-      {ok, global:whereis_name(nameservice)};
-
-    _ ->
-      error
-  end.
-
 %%% build a ring of the registered gcd clients where each gcd client
 %%% knows his left and right neighbor.
 %%% Pivot: first ClientName from which we start building the ring
@@ -206,12 +204,15 @@ ping_name_service(NameServiceNode) ->
 %%%
 %%% Returns: an updated Clients Dictionary
 build_ring_of_gcd_clients(Clients) ->
+  log("Baue Ring aus GGT Clients"),
   %%% it is not possible/ill-adviced to build a ring with only one client.
   %%% that client would have himself as his left and right neighbor and would
   %%% send himself 2 messages.
   %%% TODO decide if we should increment this to < 3 to have distinct neighbors
   case length(Clients) < 2 of
-    true -> error;
+    true ->
+      log("Bauen des Rings aus GGT Clients fehlgeschlagen"),
+      error;
     false ->
       ClientsList = orddict:fetch_keys(Clients),
       [Pivot | Tail] = ClientsList,
@@ -242,6 +243,8 @@ build_ring_of_gcd_clients(Clients, Pivot, [], PreviousClient) ->
   UpdatedClients = update_clients_with_client(Clients,
                                               FinishedPivot#gcd_client.name,
                                               FinishedPivot),
+
+  log("Bauen des Rings aus GGT Clients erfolgreich"),
   update_clients_with_client(UpdatedClients,
                              FinishedPreviousClient#gcd_client.name,
                              FinishedPreviousClient);
@@ -276,32 +279,19 @@ build_ring_of_gcd_clients(Clients, Pivot, RemainingClientsList, PreviousClient) 
                             Tail,
                             UpdatedClient).
 
-nameservice_lookup(ServiceName) ->
-  %%% get Nameservice PID
-  NameService = global:whereis_name(nameservice),
-
-  NameService ! {self(), {lookup, ServiceName}},
-
-  receive
-    not_found -> not_found;
-    ServicePID -> ServicePID
-  end.
-
 %%% this function iterates over all clients registered with the coordinator
 %%% and sends them the message to set their neighbors
 introduce_clients_to_their_neighbors(State) ->
+  log("Introducing GCD clients to their neighbors"),
   orddict:map(
     fun(Key, Value) ->
-      case nameservice_lookup(Key) of
-        %%% TODO throw some exception if not_found
-        not_found -> error;
-
-        ServicePID ->
-          ServicePID ! {setneighbors,
-                        Value#gcd_client.left_neighbor,
-                        Value#gcd_client.right_neighbor},
-          ok
-      end
+        log(format("set GCD client ~B: left neighbor: ~B, right neighbor: ~B",
+                   [Key,
+                    Value#gcd_client.left_neighbor,
+                    Value#gcd_client.right_neighbor])),
+      send_message_to_service(State, Key, {setneighbors,
+                                           Value#gcd_client.left_neighbor,
+                                           Value#gcd_client.right_neighbor})
     end,
     get_clients(State)).
 
@@ -310,18 +300,10 @@ set_calculation_seed_in_gcd_clients(State, GCD) ->
   ClientsNamesList = orddict:fetch_keys(get_clients(State)),
 
   lists:map(
-    fun(Elem) ->
-      case nameservice_lookup(Elem) of
-        %%% TODO throw some exception if not_found
-        not_found -> error;
-
-        ServicePID ->
-          %%% send a unique calculation seed for the gcd calculation
-          %%% to each gcd_client
-          {GCD, ProductOfGCD} = calculate_gcd_seed(GCD),
-          ServicePID ! {setpm, ProductOfGCD},
-          ok
-      end
+    fun(ClientName) ->
+      {GCD, ProductOfGCD} = calculate_gcd_seed(GCD),
+      log(format("Der ggT-Prozess ~B initiales Mi ~B", [ClientName, ProductOfGCD])),
+      send_message_to_service(State, ClientName, {setpm, ProductOfGCD})
     end,
     ClientsNamesList),
   ok.
@@ -334,20 +316,25 @@ start_calculation_for_a_few_gcd_clients(State, GCD) ->
   SelectedClientNames = select_percentage_of_elements_from_list(ClientsNamesList, 15),
 
   lists:map(
-    fun(Elem) ->
-      case nameservice_lookup(Elem) of
-        %%% TODO throw some exception if not_found
-        not_found -> error;
+    fun(ClientName) ->
+      %%% send the seed for the gcd calculation to each selected gcd_client
+      {GCD, ProductOfGCD} = calculate_gcd_seed(GCD),
 
-        ServicePID ->
-          %%% send the seed for the gcd calculation to each selected gcd_client
-          {GCD, ProductOfGCD} = calculate_gcd_seed(GCD),
-          ServicePID ! {sendy, ProductOfGCD},
-          ok
-      end
+      send_message_to_service(State, ClientName, {sendy, ProductOfGCD})
     end,
     SelectedClientNames),
   ok.
+
+kill_all_gcd_clients(State) ->
+  ClientsNamesList = orddict:fetch_keys(get_clients(State)),
+
+  lists:map(
+    fun(ClientName) ->
+      log(format("Sending the kill command to GCD-process ~B", [ClientName])),
+      send_message_to_service(State, ClientName, kill)
+    end,
+    ClientsNamesList).
+
 
 select_percentage_of_elements_from_list(List, Percentage) ->
   RemainingElementsToSelect = case round((length(List)/100) * Percentage) < 2 of
@@ -367,6 +354,10 @@ select_percentage_of_elements_from_list(List, RemainingElementsToSelect, Accu) -
                                           RemainingElementsToSelect - 1,
                                           [Head | Accu]).
 
+start_gcd_process(State, GCD) ->
+  set_calculation_seed_in_gcd_clients(State, GCD),
+  start_calculation_for_a_few_gcd_clients(State, GCD).
+
 %%% randomly shuffle a List with the Fisher-Yates Shuffle
 %%% taken from: http://en.literateprograms.org/Fisher-Yates_shuffle_(Erlang)
 shuffle(List) -> shuffle(List, []).
@@ -379,10 +370,10 @@ shuffle(List, Acc) ->
 %%% and the set of primes {3, 5, 11, 13, 23, 37} randomly raised to the power
 %%% of {0, 1, 2}.
 %%% Example Return Value: {65, 65 * 3^2 * 5^1 * 11^0 * 13^2 * 23^1 * 37^1}
-
 calculate_gcd_seed() ->
   %%% randomly pick a GCD between 1..100
   RequestedGCD = random:uniform(100),
+  log(format("Der neue gesuchte GGT ist ~B", [RequestedGCD])),
   calculate_gcd_seed(RequestedGCD).
 
 calculate_gcd_seed(RequestedGCD) ->
@@ -396,3 +387,77 @@ calculate_gcd_seed(RequestedGCD) ->
       math:pow(37, random:uniform(3) - 1)
       )
   }.
+
+%%% Log function for all coordinator logs
+log(Message)->
+  CoordinatorName= lists:concat(["Koordinator@",net_adm:localhost()]),
+  LogMessage = lists:concat([CoordinatorName,
+                             werkzeug:timeMilliSecond(),
+                             " ",
+                             Message,
+                             io_lib:nl()]),
+  werkzeug:logging(lists:concat([CoordinatorName,".log"]), LogMessage).
+
+log_error(ErrorMessage) ->
+  Message = lists:concat(["##### ","Error: ", ErrorMessage, " #####"]),
+  log(Message).
+
+format(String, ArgumentsList) ->
+  io_lib:format(String, ArgumentsList).
+
+%%%
+%%% Helpers for message sending
+%%%
+nameservice_lookup(NameService, ServiceName) ->
+  log(lists:concat(["Suche beim Namensdienst nach Dienst: ", ServiceName])),
+
+  NameService ! {self(), {lookup, ServiceName}},
+
+  receive
+    not_found ->
+      log_error(lists:concat(["Fehlgeschlagene Suche beim Namensdienst nach Dienst: ", ServiceName])),
+      not_found;
+    ServiceAddress = {ServiceName, ServiceNode} when
+      is_atom(ServiceName) and is_atom(ServiceNode) ->
+      {ok, ServiceAddress};
+
+    %%% we do not want to get stuck due to an unexpected message
+    _Unknown -> error
+  end.
+
+%%% ping the nameservice in order to introduce our nodes to each other
+ping_name_service(NameServiceNode) ->
+  case net_adm:ping(NameServiceNode) of
+    pong ->
+      global:sync(),
+      {ok, global:whereis_name(nameservice)};
+
+    _ ->
+      log_error("Cannot find NameService"),
+      error
+  end.
+
+send_message_to_coordinator(Message) ->
+  State = read_config_into_state(#state{}),
+  CoordinatorName = get_coordinator_name(State),
+  send_message_to_service(State, CoordinatorName, Message).
+
+send_message_to_service(State, ServiceName, Message) ->
+  NameServiceNode = get_nameservice_node_name(State),
+
+  %%% ping NameServiceNode
+  case ping_name_service(NameServiceNode) of
+    {ok, NameService} ->
+      %%% lookup the name and node of the current coordinator in charge
+      case nameservice_lookup(NameService, ServiceName) of
+        not_found -> not_found;
+
+        %%% everything is good. send message.
+        ServicePid -> ServicePid ! Message
+      end;
+
+    _ ->
+      log_error("NameService was not found in send_message_to_service function"),
+      error
+  end.
+
