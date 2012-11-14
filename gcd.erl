@@ -197,8 +197,7 @@ coordinator(NameService, CoordinatorName) ->
   end.
 
 log(ClientName, Msg) ->
-  {ok, HostName} = inet:gethostname(),
-  werkzeug:logging(format("GGTP_~s@~s.log", [ClientName, HostName]), format("~s~n", [Msg])).
+  werkzeug:logging(format("GGTP_~s@~s.log", [ClientName, net_adm:localhost()]), format("~s~n", [Msg])).
 
 format(String, Arguments) ->
   lists:flatten(io_lib:format(String, Arguments)).

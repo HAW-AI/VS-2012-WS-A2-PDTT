@@ -21,7 +21,7 @@ start(NumberOfStarters) when is_integer(NumberOfStarters) andalso NumberOfStarte
 initialize(StarterNumber) ->
   State = read_config_into_state(),
   %%% create one log per gcd client started
-  file:open(format("gcd-~B@~s.log", [StarterNumber, net_adm:localhost()]), [append]),
+  file:open(format("ggt~B@~s.log", [StarterNumber, net_adm:localhost()]), [append]),
   case ping_name_service(get_nameservicenode(State), StarterNumber) of
     {ok, NameService} ->
       NameService ! {self(), {lookup, get_coordinator_name(State)}};
@@ -93,14 +93,14 @@ format(String, ArgumentsList) ->
 
 %%% Log function for all coordinator logs
 log(Message, StarterNumber)->
-  StarterName= lists:concat(["Starter@", inet:gethostname()]),
+  StarterName= lists:concat(["Starter@", net_adm:localhost()]),
   LogMessage = lists:concat([StarterName,
                              werkzeug:timeMilliSecond(),
                              " ",
                              Message,
                              io_lib:nl()]),
 
-  werkzeug:logging(format("ggt~B@~s.log", [StarterNumber,  inet:gethostname()]), LogMessage).
+  werkzeug:logging(format("ggt~B@~s.log", [StarterNumber, net_adm:localhost()]), LogMessage).
 
 log_error(ErrorMessage, StarterNumber) ->
   Message = lists:concat(["##### ","Error: ", ErrorMessage, " #####"]),

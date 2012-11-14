@@ -29,30 +29,30 @@ initialize() ->
 
       receive
         ok ->
-          log("Erfolgreich beim Namensdienst gebunden"),
+          log("Successfully bound at nameservice"),
 
           %%% done with the start phase. everything worked. go into initial state.
+          log("Entering State: Initial"),
           initial(State);
 
         in_use ->
           %%% something went wrong. the coordinator is already bound at the Nameservice.
-          log_error("Binden beim Namesdienst fehlgeschlagen. Der Name ist bereits vergeben."),
+          log_error("Binding name with the nameservice failed. Name alrady in use."),
           terminating(State)
         end;
 
     error ->
-      log_error("Namensdienst nicht verfuegbar"),
+      log_error("Nameservice unavailable"),
       terminating(State)
 
   end.
 
 %%% initial state the coordinator goes into after the start phase
 initial(State) ->
-  log("Eintritt in Zustand: Initial"),
   receive
     % Die Anfrage nach den steuernden Werten durch den Starter Prozess.
     {getsteeringval, StarterPID} ->
-      log("Starter fragt nach Steuerwerten."),
+      log("Starter is requesting steering values"),
       StarterPID ! {steeringval,
                     get_processing_time(State),
                     get_termination_time(State),
@@ -62,7 +62,7 @@ initial(State) ->
 
     % Ein ggT-Prozess meldet sich beim Koordinator mit Namen Clientname an (Name ist der lokal registrierte Name!).
     {hello, ClientName} ->
-      log(format("Client hat sich registriert unter namen: ~p", [ClientName])),
+      log(format("Client has been registered under the name: ~p", [ClientName])),
       ClientNameToBeSaved = case werkzeug:type_is(ClientName) of
         list -> list_to_atom(ClientName);
         atom -> ClientName;
@@ -226,7 +226,7 @@ register_gcd_client(State, ClientName) ->
 %%%
 %%% Returns: an updated Clients Dictionary
 build_ring_of_gcd_clients(Clients) ->
-  log("Baue Ring aus GGT Clients"),
+  log("Build ring of gcd clients"),
   %%% it is not possible/ill-adviced to build a ring with only one client.
   %%% that client would have himself as his left and right neighbor and would
   %%% send himself 2 messages.
@@ -267,7 +267,7 @@ build_ring_of_gcd_clients(Clients, Pivot, [], PreviousClient) ->
                                               FinishedPivot#gcd_client.name,
                                               FinishedPivot),
 
-  log("Bauen des Rings aus GGT Clients erfolgreich"),
+  log("Building the ring of gcd clients succeeded"),
   update_clients_with_client(UpdatedClients,
                              FinishedPreviousClient#gcd_client.name,
                              FinishedPreviousClient);
@@ -325,7 +325,7 @@ set_calculation_seed_in_gcd_clients(State, GCD) ->
   lists:map(
     fun(ClientName) ->
       {GCD, ProductOfGCD} = calculate_gcd_seed(GCD),
-      log(format("Der ggT-Prozess ~p initiales Mi ~p", [ClientName, ProductOfGCD])),
+      log(format("The GCD process ~p: initial Mi ~p", [ClientName, ProductOfGCD])),
       send_message_to_service(State, ClientName, {setpm, ProductOfGCD})
     end,
     ClientsNamesList),
@@ -396,7 +396,7 @@ shuffle(List, Acc) ->
 calculate_gcd_seed() ->
   %%% randomly pick a GCD between 1..100
   RequestedGCD = random:uniform(100),
-  log(format("Der neue gesuchte GGT ist ~p", [RequestedGCD])),
+  log(format("The GCD we are trying to find is: ~p", [RequestedGCD])),
   calculate_gcd_seed(RequestedGCD).
 
 calculate_gcd_seed(RequestedGCD) ->
@@ -413,7 +413,7 @@ calculate_gcd_seed(RequestedGCD) ->
 
 %%% Log function for all coordinator logs
 log(Message)->
-  CoordinatorName= lists:concat(["Koordinator@", inet:gethostname()]),
+  CoordinatorName= lists:concat(["Koordinator@", net_adm:localhost()]),
   LogMessage = lists:concat([CoordinatorName,
                              werkzeug:timeMilliSecond(),
                              " ",
@@ -432,13 +432,13 @@ format(String, ArgumentsList) ->
 %%% Helpers for message sending
 %%%
 nameservice_lookup(NameService, ServiceName) ->
-  log(format("Suche beim Namensdienst nach Dienst: ~p", [ServiceName])),
+  log(format("Searching for service ~p at the nameservice", [ServiceName])),
 
   NameService ! {self(), {lookup, ServiceName}},
 
   receive
     not_found ->
-      log_error(format("Fehlgeschlagene Suche beim Namensdienst nach Dienst: ~p", [ServiceName])),
+      log_error(format("Search for service ~p at the nameservice failed.", [ServiceName])),
       not_found;
     ServiceAddress = {ServiceName, ServiceNode} when
       is_atom(ServiceName) and is_atom(ServiceNode) ->
