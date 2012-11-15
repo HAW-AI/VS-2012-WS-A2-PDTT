@@ -24,6 +24,8 @@ Start the system:
     timer:sleep(100).
     Coord ! start_distributed_gcd_calculation.
 
+Note that `starter:start(N)` starts N starter which then take the amount of GCD processes to start from the steeringvalues the coordinator sends to the starter. So you end up with `N * ggtprozessnummer` GCD Clients.
+
 start_distributed_gcd_calculation will pick a random start value
 between 1-100 but you can also specify a gcd to search for with:
 
