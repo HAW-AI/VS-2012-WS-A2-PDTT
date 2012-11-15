@@ -133,7 +133,7 @@ with_number(State = #state{client_name = ClientName, number = Number, name_servi
 
     % {abstimmung,Initiator}: Wahlnachricht für die Terminierung der aktuellen Berechnung; Initiator ist der Initiator dieser Wahl (z.B. Name des ggT-Prozesses).
     {abstimmung, Initiator} ->
-      log(ClientName, format("Vote request from ~p.", [Initiator])),
+      % log(ClientName, format("Vote request from ~p.", [Initiator])),
       with_number(abstimmung(State, Initiator));
 
     {tellmi, From} ->
@@ -164,9 +164,9 @@ setpm(State, NewNumber) ->
 send_y(State = #state{number = Number, client_name = ClientName, coordinator = Coordinator, left_neighbor = LeftNeighbor, right_neighbor = RightNeighbor, delay_time = DelayTime}, Y) ->
   NewNumberSafe = case gcd(Number, Y, DelayTime) of
     NewNumber when NewNumber =/= Number ->
-      log(ClientName, format(">>> New Number from gcd(Number=~B, Y=~B): ~B.", [Number, Y, NewNumber])),
+      % log(ClientName, format(">>> New Number from gcd(Number=~B, Y=~B): ~B.", [Number, Y, NewNumber])),
       Coordinator ! {briefmi, {ClientName, NewNumber, werkzeug:timeMilliSecond()}},
-      log(ClientName, format("Send Number ~B to neighbors ~p and ~p.", [Number, LeftNeighbor, RightNeighbor])),
+      % log(ClientName, format("Send Number ~B to neighbors ~p and ~p.", [Number, LeftNeighbor, RightNeighbor])),
       send_number_to_neighbors(NewNumber, LeftNeighbor, RightNeighbor),
       NewNumber;
 
