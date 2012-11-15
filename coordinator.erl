@@ -343,6 +343,7 @@ start_calculation_for_a_few_gcd_clients(State, GCD) ->
       %%% send the seed for the gcd calculation to each selected gcd_client
       {GCD, ProductOfGCD} = calculate_gcd_seed(GCD),
 
+      log(format("send_message_to_service(State, ~p, {sendy, ~B}", [ClientName, ProductOfGCD])),
       send_message_to_service(State, ClientName, {sendy, ProductOfGCD})
     end,
     SelectedClientNames),
@@ -445,7 +446,9 @@ nameservice_lookup(NameService, ServiceName) ->
       {ok, ServiceAddress};
 
     %%% we do not want to get stuck due to an unexpected message
-    _Unknown -> error
+    Unknown ->
+      log_error(format("nameservice_lookup: waiting for nameservice response but got: ~p.", [Unknown])),
+       error
   end.
 
 %%% ping the nameservice in order to introduce our nodes to each other
@@ -478,7 +481,11 @@ send_message_to_service(State, ServiceName, Message) ->
           not_found;
 
         %%% everything is good. send message.
-        {ok, ServicePid} -> ServicePid ! Message
+        {ok, ServicePid} -> ServicePid ! Message;
+
+        error ->
+          log_error("send_message_to_service: nameservice_lookup was interrupted. No message sent."),
+          send_message_to_service(State, ServiceName, Message)
       end;
 
     _ ->
