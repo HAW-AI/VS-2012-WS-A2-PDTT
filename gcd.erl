@@ -158,7 +158,7 @@ with_number(State = #state{client_name = ClientName, number = Number, name_servi
 
 % die von diesem Prozess zu berabeitenden Zahl für eine neue Berechnung wird gesetzt.
 setpm(State, NewNumber) ->
-  restart_vote_timer(State#state{number = NewNumber}).
+  restart_vote_timer(State#state{number = NewNumber, number_retrieval_time = current_time_milliseconds(), has_started_vote = false}).
 
 % {sendy,Y}: der rekursive Aufruf der ggT Berechnung.
 send_y(State = #state{number = Number, client_name = ClientName, coordinator = Coordinator, left_neighbor = LeftNeighbor, right_neighbor = RightNeighbor, delay_time = DelayTime}, Y) ->
@@ -174,7 +174,7 @@ send_y(State = #state{number = Number, client_name = ClientName, coordinator = C
       Number
   end,
 
-  restart_vote_timer(State#state{number = NewNumberSafe, number_retrieval_time = current_time_milliseconds(), has_started_vote = false}).
+  setpm(State, NewNumberSafe).
 
 send_number_to_neighbors(Number, LeftNeighbor, RightNeighbor) ->
   lists:foreach(fun(Neighbor) -> Neighbor ! {sendy, Number} end, [LeftNeighbor, RightNeighbor]).
