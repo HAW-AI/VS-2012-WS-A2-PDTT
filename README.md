@@ -2,6 +2,8 @@ VS-2012-WS-A2-PDTT
 ==================
 Verteilte Systeme, Wintersemester 2012, Aufgabe 2
 
+Set nameservice nodes in coordinator.cfg and gcd.cfg.
+
 Compile the source files:
 
     c(gcd).
