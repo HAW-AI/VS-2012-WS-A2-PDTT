@@ -120,7 +120,7 @@ wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator
   end.
 
 with_number(State = #state{client_name = ClientName, number = Number, name_service = NameService}) ->
-  log(ClientName, "Waiting for incomming messages..."),
+  % log(ClientName, "Waiting for incomming messages..."),
   
   receive
     {setpm,MiNeu} ->
@@ -164,7 +164,9 @@ setpm(State, NewNumber) ->
 send_y(State = #state{number = Number, client_name = ClientName, coordinator = Coordinator, left_neighbor = LeftNeighbor, right_neighbor = RightNeighbor, delay_time = DelayTime}, Y) ->
   NewNumberSafe = case gcd(Number, Y, DelayTime) of
     NewNumber when NewNumber =/= Number ->
+      log(ClientName, format(">>> New Number from gcd(Number=~B, Y=~B): ~B.", [Number, Y, NewNumber])),
       Coordinator ! {briefmi, {ClientName, NewNumber, werkzeug:timeMilliSecond()}},
+      log(ClientName, format("Send Number ~B to neighbors ~p and ~p.", [Number, LeftNeighbor, RightNeighbor])),
       send_number_to_neighbors(NewNumber, LeftNeighbor, RightNeighbor),
       NewNumber;
 
@@ -181,20 +183,21 @@ abstimmung(State = #state{termination_time = TerminationTime, number_retrieval_t
   case Initiator of
     % Erhält ein initiierende Prozess von seinem linken Nachbarn die Anfrage nach der Terminierung (abstimmung), meldet er die Terminierung dem Koordinator.
     _Initiator = ClientName ->
-      log(ClientName, format("I started the vote (he ~p = me ~p). --> Send termination request to coordinator.", [Initiator, ClientName])),
+      % log(ClientName, format("I started the vote (he ~p = me ~p). --> Send termination request to coordinator.", [Initiator, ClientName])),
       Coordinator ! {briefterm, {ClientName, Number, werkzeug:timeMilliSecond()}};
 
     _ ->
-      log(ClientName, format("He started the vote (he ~p != me ~p).", [Initiator, ClientName])),
+      % log(ClientName, format("He started the vote (he ~p != me ~p).", [Initiator, ClientName])),
 
       % ist seit dem letzten Empfang einer Zahl mehr als **/2 (** halbe) Sekunden vergangen, dann leitet er die Anfrage an seinen rechten Nachbarn weiter (implizites Zustimmen)
       case current_time_milliseconds() - NumberRetrievalTime > TerminationTime / 2 of
         true ->
-          log(ClientName, format("Accept vote request. Pass request to right neighbor (~p).", [RightNeighbor])),
+          % log(ClientName, format("Accept vote request. Pass request to right neighbor (~p).", [RightNeighbor])),
           RightNeighbor ! {abstimmung, Initiator};
 
         _ ->
-          log(ClientName, "Ignore vote request")
+          % log(ClientName, "Ignore vote request"),
+          void
       end
   end,
 
@@ -206,7 +209,7 @@ tell_mi(State = #state{number = Number}, From) ->
   State.
 
 start_vote(State = #state{client_name = ClientName, right_neighbor = RightNeighbor}) ->
-  log(ClientName, format("Start vote by sending request to right neighbor (~p).", [RightNeighbor])),
+  % log(ClientName, format("Start vote by sending request to right neighbor (~p).", [RightNeighbor])),
   RightNeighbor ! {abstimmung, ClientName},
   State#state{has_started_vote = true}.
 
@@ -221,17 +224,19 @@ gcd(Number, Y, DelayTime) ->
 
 
 start_vote_timer(TerminationTime, ClientName) ->
-  log(ClientName, format("Start timer. I am ~p. Will fire in ~Bms.", [ClientName, TerminationTime])),
+  % log(ClientName, format("Start timer. I am ~p. Will fire in ~Bms.", [ClientName, TerminationTime])),
   {ok, Timer} = timer:send_after(TerminationTime, start_vote),
   Timer.
 
 restart_vote_timer(State = #state{termination_time = TerminationTime, client_name = ClientName, vote_timer = OldVoteTimer}) ->
   case timer:cancel(OldVoteTimer) of
     {error, Reason} ->
-      log(ClientName, format("Could not cancel old vote timer. Reason: ~p.", [Reason]));
+      % log(ClientName, format("Could not cancel old vote timer. Reason: ~p.", [Reason])),
+      void;
 
     _ ->
-      log(ClientName, "Canceled old vote timer.")
+      % log(ClientName, "Canceled old vote timer."),
+      void
   end,
   State#state{vote_timer = start_vote_timer(TerminationTime, ClientName)}.
 
