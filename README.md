@@ -23,3 +23,16 @@ Start the system:
     Coord ! get_ready.
     timer:sleep(100).
     Coord ! start_distributed_gcd_calculation.
+
+start_distributed_gcd_calculation will pick a random start value
+between 1-100 but you can also specify a gcd to search for with:
+
+    Coord ! {start_distributed_gcd_calculation, 34}.
+
+You can reset the coordinator and re-open the registration for gcd
+clients with:
+
+    Coord ! reset.
+
+You can kill the coordinator which will kill all connected gcd clients
+and then unbinds the coordinator name at the nameservice.
