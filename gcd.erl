@@ -80,7 +80,7 @@ wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordina
 
     kill ->
       log(ClientName, "wait_for_neighbors: kill."),
-      unbind_from_name_service(ClientName, NameService),
+      stop(ClientName, NameService),
       ok;
 
     Unknown ->
@@ -111,7 +111,7 @@ wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator
 
     kill ->
       log(ClientName, "wait_for_number: kill."),
-      unbind_from_name_service(ClientName, NameService),
+      stop(ClientName, NameService),
       ok;
 
     Unknown ->
@@ -143,7 +143,7 @@ with_number(State = #state{client_name = ClientName, number = Number, name_servi
     % kill: der ggT-Prozess wird beendet.
     kill ->
       log(ClientName, "with_number: kill."),
-      unbind_from_name_service(ClientName, NameService),
+      stop(ClientName, NameService),
       ok;
 
     start_vote ->
@@ -252,6 +252,10 @@ unbind_from_name_service(ClientName, NameService) ->
   receive 
     ok -> log(ClientName, "...done.")
   end.
+
+stop(ClientName, NameService) ->
+  unbind_from_name_service(ClientName, NameService),
+  unregister(ClientName).
 
 
 % Ein ggT-Prozess hat den Namen ?????, wobei ????? eine Zahl ist, die sich wie folgt zusammensetzt: 
