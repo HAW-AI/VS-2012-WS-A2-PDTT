@@ -223,14 +223,14 @@ gcd(Number, Y, DelayTime) ->
   end.
 
 
-start_vote_timer(TerminationTime, ClientName) ->
+start_vote_timer(TerminationTime, _ClientName) ->
   % log(ClientName, format("Start timer. I am ~p. Will fire in ~Bms.", [ClientName, TerminationTime])),
   {ok, Timer} = timer:send_after(TerminationTime, start_vote),
   Timer.
 
 restart_vote_timer(State = #state{termination_time = TerminationTime, client_name = ClientName, vote_timer = OldVoteTimer}) ->
   case timer:cancel(OldVoteTimer) of
-    {error, Reason} ->
+    {error, _Reason} ->
       % log(ClientName, format("Could not cancel old vote timer. Reason: ~p.", [Reason])),
       void;
 
