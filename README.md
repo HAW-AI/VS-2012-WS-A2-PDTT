@@ -18,7 +18,7 @@ Start the system:
     timer:sleep(100).
     Coord = coordinator:start().
     timer:sleep(100).
-    starter:start(5).
+    starter:start(20).
     timer:sleep(100).
     Coord ! get_ready.
     timer:sleep(100).
