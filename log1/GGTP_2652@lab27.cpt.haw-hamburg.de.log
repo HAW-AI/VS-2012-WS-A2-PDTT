@@ -1,0 +1,10 @@
+15.11 11:24:21,219| 15.11 11:24:21,218| Start GCD client 2652 with PID <0.96.0> on node 'pt@lab27.cpt.haw-hamburg.de'.
+15.11 11:24:21,486| Registered with name service on node 'ns@lab30.cpt.haw-hamburg.de'.
+15.11 11:24:21,988| Resolve coordinator from name chef.
+15.11 11:24:21,195| Resolved coordinator to {chef,'lab22@lab22.cpt.haw-hamburg.de'}.
+15.11 11:24:21,196| Contacted coordinator.
+15.11 11:24:21,203| Waiting for neighbors...
+15.11 11:25:11,826| Set neighbors to '2692' (left) and '2991' (right).
+15.11 11:25:11,827| Waiting for number...
+15.11 11:25:55,146| wait_for_number: Set Number to 30827475.
+15.11 11:25:58,234| Timer fired! Start vote.
