@@ -6,6 +6,7 @@
                , config
                }).
 -record(gcd_client, { name
+                    , servicepid
                     , left_neighbor
                     , right_neighbor
                     }).
@@ -216,7 +217,22 @@ update_clients_with_client(Clients, ClientName, UpdatedClient) ->
 %%% register gcd client and return new state
 register_gcd_client(State, ClientName) ->
   Clients = get_clients(State),
-  UpdatedClients = update_clients_with_client(Clients, ClientName, #gcd_client{name=ClientName}),
+  NameService = global:whereis_name(nameservice),
+
+  NewClientName = case nameservice_lookup(NameService, ClientName) of
+    not_found ->
+      log_error(format("Client: ~p not found at nameservice", [ClientName])),
+      not_found;
+
+    %%% everything is good. return servicepid.
+    {ok, ServicePid} -> ServicePid;
+
+    error ->
+      log_error("register gcd client: nameservice_lookup was interrupted."),
+      error
+  end,
+
+  UpdatedClients = update_clients_with_client(Clients, ClientName, #gcd_client{name=ClientName, servicepid=NewClientName}),
   State#state{clients=UpdatedClients}.
 
 %%% build a ring of the registered gcd clients where each gcd client
@@ -257,10 +273,10 @@ build_ring_of_gcd_clients(Clients, Pivot, [], PreviousClient) ->
   %%% all clients have been updated. all that is missing is the left neighbor
   %%% of the Pivot element and the right_neighbor of the PreviousClient
   {ok, PivotFromClientsDictionary} = orddict:find(Pivot#gcd_client.name, Clients),
-  FinishedPivot = PivotFromClientsDictionary#gcd_client{left_neighbor=PreviousClient#gcd_client.name},
+  FinishedPivot = PivotFromClientsDictionary#gcd_client{left_neighbor=PreviousClient#gcd_client.servicepid},
 
   %%% 3. set FinishedPivot as the right_neighbor of the PreviousClient
-  FinishedPreviousClient = PreviousClient#gcd_client{right_neighbor=FinishedPivot#gcd_client.name},
+  FinishedPreviousClient = PreviousClient#gcd_client{right_neighbor=FinishedPivot#gcd_client.servicepid},
 
   %%% return the updated Clients Dictionary with the ring
   UpdatedClients = update_clients_with_client(Clients,
@@ -283,10 +299,10 @@ build_ring_of_gcd_clients(Clients, Pivot, RemainingClientsList, PreviousClient) 
   %%% 1. set the PreviousClient as the left_neighbor of the current client
   %%% 2. set the head of the RemainingClientsList as the right_neighbor
   %%% of the current client
-  UpdatedClient = CurrentClient#gcd_client{left_neighbor=PreviousClient#gcd_client.name},
+  UpdatedClient = CurrentClient#gcd_client{left_neighbor=PreviousClient#gcd_client.servicepid},
 
   %%% 3. set UpdatedClient as the right_neighbor of the PreviousClient
-  FinishedPreviousClient = PreviousClient#gcd_client{right_neighbor=UpdatedClient#gcd_client.name},
+  FinishedPreviousClient = PreviousClient#gcd_client{right_neighbor=UpdatedClient#gcd_client.servicepid},
 
   %%% 4. update the Client Dictionary with the UpdatedClient and
   %%% FinishedPreviousClient
@@ -312,29 +328,27 @@ introduce_clients_to_their_neighbors(State) ->
                    [Key,
                     Value#gcd_client.left_neighbor,
                     Value#gcd_client.right_neighbor])),
-      send_message_to_service(State, Key, {setneighbors,
-                                           Value#gcd_client.left_neighbor,
-                                           Value#gcd_client.right_neighbor})
+        Value#gcd_client.servicepid ! {setneighbors,
+                                       Value#gcd_client.left_neighbor,
+                                       Value#gcd_client.right_neighbor}
     end,
     get_clients(State)).
 
 %%% sets a product of the gcd value in all the gcd_clients.
 set_calculation_seed_in_gcd_clients(State, GCD) ->
-  ClientsNamesList = orddict:fetch_keys(get_clients(State)),
-
-  lists:map(
-    fun(ClientName) ->
+  orddict:map(
+    fun(Key, Value) ->
       {GCD, ProductOfGCD} = calculate_gcd_seed(GCD),
-      log(format("The GCD process ~p: initial Mi ~p", [ClientName, ProductOfGCD])),
-      send_message_to_service(State, ClientName, {setpm, ProductOfGCD})
+      log(format("The GCD process ~p: initial Mi ~p", [Key, ProductOfGCD])),
+      Value#gcd_client.servicepid ! {setpm, ProductOfGCD}
     end,
-    ClientsNamesList),
-  ok.
+    get_clients(State)).
 
 %%% sets the calculation seed value in 15% of the gcd_clients. these 15%
 %%% are randomly chosen from all clients registered with the coordinator.
 start_calculation_for_a_few_gcd_clients(State, GCD) ->
-  ClientsNamesList = orddict:fetch_keys(get_clients(State)),
+  Clients = get_clients(State),
+  ClientsNamesList = orddict:fetch_keys(Clients),
   %%% select 15% of the clients but at least 2 clients
   SelectedClientNames = select_percentage_of_elements_from_list(ClientsNamesList, 15),
 
@@ -344,18 +358,21 @@ start_calculation_for_a_few_gcd_clients(State, GCD) ->
       {GCD, ProductOfGCD} = calculate_gcd_seed(GCD),
 
       log(format("send_message_to_service(State, ~p, {sendy, ~B}", [ClientName, ProductOfGCD])),
-      send_message_to_service(State, ClientName, {sendy, ProductOfGCD})
+      Client = orddict:fetch(ClientName, Clients),
+      Client#gcd_client.servicepid ! {sendy, ProductOfGCD}
     end,
     SelectedClientNames),
   ok.
 
 kill_all_gcd_clients(State) ->
-  ClientsNamesList = orddict:fetch_keys(get_clients(State)),
+  Clients = get_clients(State),
+  ClientsNamesList = orddict:fetch_keys(Clients),
 
   lists:map(
     fun(ClientName) ->
       log(format("Sending the kill command to GCD-process ~p", [ClientName])),
-      send_message_to_service(State, ClientName, kill)
+      Client = orddict:fetch(ClientName, Clients),
+      Client#gcd_client.servicepid ! kill
     end,
     ClientsNamesList).
 
@@ -443,12 +460,12 @@ nameservice_lookup(NameService, ServiceName) ->
       not_found;
     ServiceAddress = {ServiceName, ServiceNode} when
       is_atom(ServiceName) and is_atom(ServiceNode) ->
-      {ok, ServiceAddress};
+      {ok, ServiceAddress}
 
     %%% we do not want to get stuck due to an unexpected message
-    Unknown ->
-      log_error(format("nameservice_lookup: waiting for nameservice response but got: ~p.", [Unknown])),
-       error
+    %Unknown ->
+      %log_error(format("nameservice_lookup: waiting for nameservice response but got: ~p.", [Unknown])),
+       %error
   end.
 
 %%% ping the nameservice in order to introduce our nodes to each other
