@@ -76,7 +76,20 @@ wait_for_neighbors(DelayTime, TerminationTime, ClientName, NameService, Coordina
   receive
     {setneighbors, LeftNeighbor, RightNeighbor} ->
       log(ClientName, format("Set neighbors to ~p (left) and ~p (right).", [LeftNeighbor, RightNeighbor])),
-      wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator, LeftNeighbor, RightNeighbor);
+
+      case resolve_client_name_to_pid(NameService, LeftNeighbor) of
+        {ok, LPID} ->
+          case resolve_client_name_to_pid(NameService, RightNeighbor) of
+            {ok, RPID} ->
+              wait_for_number(DelayTime, TerminationTime, ClientName, NameService, Coordinator, LPID, RPID);
+
+            error ->
+              error
+          end;
+      
+        error ->
+          error
+      end;
 
     kill ->
       log(ClientName, "wait_for_neighbors: kill."),
@@ -282,6 +295,24 @@ coordinator(NameService, CoordinatorName) ->
 
     Coordinator -> 
       {ok, Coordinator}
+  end.
+
+resolve_client_name_to_pid(NameService, ClientName) ->
+  NameService ! {self(), {lookup, ClientName}},
+
+  receive
+    PID = {Name, Node} when is_atom(Name) and is_atom(Node) -> 
+      case net_adm:ping(Node) of
+        pong ->
+          global:sync(),
+          {ok, PID};
+
+        pang ->
+          error
+      end;
+
+    not_found ->
+      error
   end.
 
 log(ClientName, Msg) ->
