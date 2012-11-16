@@ -219,7 +219,7 @@ register_gcd_client(State, ClientName) ->
   Clients = get_clients(State),
   NameService = global:whereis_name(nameservice),
 
-  NewClientName = case nameservice_lookup(NameService, ClientName) of
+  ClientPID = case nameservice_lookup(NameService, ClientName) of
     not_found ->
       log_error(format("Client: ~p not found at nameservice", [ClientName])),
       not_found;
@@ -232,7 +232,7 @@ register_gcd_client(State, ClientName) ->
       error
   end,
 
-  UpdatedClients = update_clients_with_client(Clients, ClientName, #gcd_client{name=ClientName, servicepid=NewClientName}),
+  UpdatedClients = update_clients_with_client(Clients, ClientName, #gcd_client{name=ClientName, servicepid=ClientPID}),
   State#state{clients=UpdatedClients}.
 
 %%% build a ring of the registered gcd clients where each gcd client
@@ -273,10 +273,10 @@ build_ring_of_gcd_clients(Clients, Pivot, [], PreviousClient) ->
   %%% all clients have been updated. all that is missing is the left neighbor
   %%% of the Pivot element and the right_neighbor of the PreviousClient
   {ok, PivotFromClientsDictionary} = orddict:find(Pivot#gcd_client.name, Clients),
-  FinishedPivot = PivotFromClientsDictionary#gcd_client{left_neighbor=PreviousClient#gcd_client.servicepid},
+  FinishedPivot = PivotFromClientsDictionary#gcd_client{left_neighbor=PreviousClient#gcd_client.name},
 
   %%% 3. set FinishedPivot as the right_neighbor of the PreviousClient
-  FinishedPreviousClient = PreviousClient#gcd_client{right_neighbor=FinishedPivot#gcd_client.servicepid},
+  FinishedPreviousClient = PreviousClient#gcd_client{right_neighbor=FinishedPivot#gcd_client.name},
 
   %%% return the updated Clients Dictionary with the ring
   UpdatedClients = update_clients_with_client(Clients,
@@ -299,10 +299,10 @@ build_ring_of_gcd_clients(Clients, Pivot, RemainingClientsList, PreviousClient) 
   %%% 1. set the PreviousClient as the left_neighbor of the current client
   %%% 2. set the head of the RemainingClientsList as the right_neighbor
   %%% of the current client
-  UpdatedClient = CurrentClient#gcd_client{left_neighbor=PreviousClient#gcd_client.servicepid},
+  UpdatedClient = CurrentClient#gcd_client{left_neighbor=PreviousClient#gcd_client.name},
 
   %%% 3. set UpdatedClient as the right_neighbor of the PreviousClient
-  FinishedPreviousClient = PreviousClient#gcd_client{right_neighbor=UpdatedClient#gcd_client.servicepid},
+  FinishedPreviousClient = PreviousClient#gcd_client{right_neighbor=UpdatedClient#gcd_client.name},
 
   %%% 4. update the Client Dictionary with the UpdatedClient and
   %%% FinishedPreviousClient
